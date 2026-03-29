@@ -1,0 +1,18 @@
+# agreements/urls.py
+from django.urls import path
+from . import views
+
+app_name = 'agreements'
+
+urlpatterns = [
+    # 主界面
+    path('', views.AgreementDashboardView.as_view(), name='dashboard'),
+    path('upload/', views.AgreementUploadView.as_view(), name='upload'),
+    path('list/', views.AgreementListView.as_view(), name='list'),
+    path('<uuid:pk>/', views.AgreementDetailView.as_view(), name='detail'),
+    path('<uuid:pk>/manual-match/', views.ManualMatchView.as_view(), name='manual_match'),
+    
+    # API
+    path('api/upload/', views.UploadAPIView.as_view(), name='api_upload'),
+    path('api/<uuid:pk>/status/', views.StatusAPIView.as_view(), name='api_status'),
+]
