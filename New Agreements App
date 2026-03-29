@@ -4,43 +4,189 @@ cd agreements
 # 创建所有目录
 mkdir -Force parsers, matchers, utils, templates\agreements, static\agreements\js, static\agreements\css
 
-# quick_create.py
+# create_structure.py
 import os
+import sys
 
-# 在agreements目录中运行此脚本
-paths = [
-    'parsers/__init__.py',
-    'parsers/base_parser.py',
-    'parsers/pdf_parser.py',
-    'parsers/ocr_parser.py',
-    'matchers/__init__.py',
-    'matchers/customer_matcher.py',
-    'matchers/agreement_matcher.py',
-    'utils/__init__.py',
-    'utils/file_utils.py',
-    'utils/validation.py',
-    'utils/constants.py',
-    '__init__.py',
-    'admin.py',
-    'apps.py',
-    'models.py',
-    'views.py',
-    'urls.py',
-    'forms.py',
-    'tests.py',
-    'templates/agreements/.keep',
-    'static/agreements/js/.keep',
-    'static/agreements/css/.keep',
-]
 
-for path in paths:
-    dir_path = os.path.dirname(path)
-    if dir_path and not os.path.exists(dir_path):
-        os.makedirs(dir_path, exist_ok=True)
-    if not os.path.exists(path):
-        with open(path, 'w', encoding='utf-8') as f:
-            if path.endswith('.py'):
-                f.write(f'# {os.path.basename(path)}\n\n')
-        print(f'Created: {path}')
+def create_structure(base_path='.'):
+    """
+    一键创建agreements模块的完整目录结构
+    """
+    # 目录结构定义
+    structure = {
+        '': [
+            '__init__.py',
+            'admin.py',
+            'apps.py',
+            'models.py',
+            'views.py',
+            'urls.py',
+            'forms.py',
+            'tests.py',
+        ],
+        'parsers': [
+            '__init__.py',
+            'base_parser.py',
+            'pdf_parser.py',
+            'ocr_parser.py',
+        ],
+        'matchers': [
+            '__init__.py',
+            'customer_matcher.py',
+            'agreement_matcher.py',
+        ],
+        'utils': [
+            '__init__.py',
+            'file_utils.py',
+            'validation.py',
+            'constants.py',
+        ],
+        'templates/agreements': [],  # 目录，不需要创建文件
+        'static/agreements/js': [],
+        'static/agreements/css': [],
+    }
+    
+    print(f"🚀 开始创建目录结构...")
+    print(f"📍 基础路径: {os.path.abspath(base_path)}")
+    print("─" * 50)
+    
+    created_count = 0
+    
+    for relative_dir, files in structure.items():
+        # 创建目录
+        dir_path = os.path.join(base_path, relative_dir)
+        
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path, exist_ok=True)
+            print(f"📁 创建目录: {relative_dir or '.'}")
+        
+        # 创建文件
+        for filename in files:
+            file_path = os.path.join(dir_path, filename)
+            
+            if not os.path.exists(file_path):
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    # 添加基本的文件头注释
+                    if filename.endswith('.py') and filename != '__init__.py':
+                        f.write(f'# {filename}\n')
+                        f.write('#\n')
+                        f.write('# Created by create_structure.py\n')
+                        f.write(f'# {os.path.basename(filename)}\n\n')
+                created_count += 1
+                print(f"  📄 创建文件: {os.path.join(relative_dir, filename)}")
+    
+    print("─" * 50)
+    print(f"✅ 完成！创建了 {created_count} 个文件")
+    print("📁 目录结构已准备就绪")
+    return True
 
-print('✅ 所有文件创建完成！')
+
+def verify_structure(base_path='.'):
+    """
+    验证目录结构是否正确创建
+    """
+    print("\n🔍 验证目录结构...")
+    
+    required_dirs = [
+        'parsers',
+        'matchers',
+        'utils',
+        'templates/agreements',
+        'static/agreements/js',
+        'static/agreements/css',
+    ]
+    
+    required_files = [
+        '__init__.py',
+        'admin.py',
+        'apps.py',
+        'models.py',
+        'views.py',
+        'urls.py',
+        'forms.py',
+        'tests.py',
+        'parsers/__init__.py',
+        'parsers/base_parser.py',
+        'parsers/pdf_parser.py',
+        'parsers/ocr_parser.py',
+        'matchers/__init__.py',
+        'matchers/customer_matcher.py',
+        'matchers/agreement_matcher.py',
+        'utils/__init__.py',
+        'utils/file_utils.py',
+        'utils/validation.py',
+        'utils/constants.py',
+    ]
+    
+    all_ok = True
+    
+    # 检查目录
+    for dir_path in required_dirs:
+        full_path = os.path.join(base_path, dir_path)
+        if os.path.exists(full_path) and os.path.isdir(full_path):
+            print(f"  ✅ 目录存在: {dir_path}")
+        else:
+            print(f"  ❌ 目录缺失: {dir_path}")
+            all_ok = False
+    
+    # 检查文件
+    for file_path in required_files:
+        full_path = os.path.join(base_path, file_path)
+        if os.path.exists(full_path) and os.path.isfile(full_path):
+            print(f"  ✅ 文件存在: {file_path}")
+        else:
+            print(f"  ❌ 文件缺失: {file_path}")
+            all_ok = False
+    
+    if all_ok:
+        print("\n🎉 所有文件和目录都正确创建！")
+    else:
+        print("\n⚠️  有些文件或目录缺失，请重新运行脚本")
+    
+    return all_ok
+
+
+def main():
+    """
+    主函数
+    """
+    print("=" * 60)
+    print("📁 Agreements模块目录创建脚本")
+    print("=" * 60)
+    
+    # 确定基础路径
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # 询问是否在当前目录创建
+    response = input(f"是否在当前目录创建? ({os.getcwd()}) [Y/n]: ").strip().lower()
+    
+    if response in ['', 'y', 'yes']:
+        base_path = '.'
+    else:
+        base_path = input("请输入agreements目录的路径: ").strip()
+    
+    # 创建目录结构
+    if create_structure(base_path):
+        # 验证
+        verify_structure(base_path)
+        
+        # 提供下一步建议
+        print("\n" + "=" * 60)
+        print("🚀 下一步操作建议:")
+        print("1. 添加agreements到INSTALLED_APPS:")
+        print("   # settings.py")
+        print("   INSTALLED_APPS = [")
+        print("       ...,")
+        print("       'agreements',")
+        print("   ]")
+        print("\n2. 运行迁移:")
+        print("   python manage.py makemigrations agreements")
+        print("   python manage.py migrate")
+        print("=" * 60)
+    
+    input("\n按Enter键退出...")
+
+
+if __name__ == '__main__':
+    main()
