@@ -1,0 +1,166 @@
+# agreements/admin.py
+from django.contrib import admin
+from django.utils.html import format_html
+from .models import AgreementPDF, ParsingLog
+
+
+@admin.register(AgreementPDF)
+class AgreementPDFAdmin(admin.ModelAdmin):
+    list_display = [
+        'file_name',
+        'borrower_name',
+        'agreement_date',
+        'facility_amount',
+        'parsing_status_display',
+        'match_status_display',
+        'customer_link',
+        'uploaded_at',
+    ]
+    
+    list_filter = [
+        'parsing_status',
+        'match_status',
+        'match_type',
+        'is_manually_verified',
+        'agreement_date',
+    ]
+    
+    search_fields = [
+        'file_name',
+        'borrower_name',
+        'parsed_text',
+        'customer__name',
+        'customer__customer_id',
+    ]
+    
+    readonly_fields = [
+        'id',
+        'created_at',
+        'updated_at',
+        'uploaded_at',
+        'parsed_at',
+        'file_size',
+        'parsing_errors',
+    ]
+    
+    fieldsets = (
+        ('基础信息', {
+            'fields': (
+                'id',
+                'original_file',
+                'file_name',
+                'file_size',
+                'uploaded_at',
+            )
+        }),
+        ('解析结果', {
+            'fields': (
+                'borrower_name',
+                'agreement_date',
+                'facility_amount',
+                'currency',
+                'parsed_text',
+                'parsing_status',
+                'parsing_errors',
+                'parsed_at',
+            )
+        }),
+        ('客户匹配', {
+            'fields': (
+                'customer',
+                'credit_application',
+                'facility',
+                'match_status',
+                'match_type',
+                'match_confidence',
+                'candidate_customers',
+            )
+        }),
+        ('验证信息', {
+            'fields': (
+                'is_manually_verified',
+                'verified_by',
+                'verified_at',
+                'notes',
+            )
+        }),
+        ('元数据', {
+            'fields': (
+                'created_at',
+                'updated_at',
+            )
+        }),
+    )
+    
+    def parsing_status_display(self, obj):
+        colors = {
+            'uploaded': 'gray',
+            'parsing': 'orange',
+            'parsed': 'green',
+            'error': 'red',
+        }
+        color = colors.get(obj.parsing_status, 'black')
+        return format_html(
+            '<span style="color: {};">{}</span>',
+            color,
+            obj.get_parsing_status_display()
+        )
+    parsing_status_display.short_description = '解析状态'
+    
+    def match_status_display(self, obj):
+        colors = {
+            'pending': 'gray',
+            'matched': 'green',
+            'multiple': 'orange',
+            'unmatched': 'red',
+            'manual_review': 'blue',
+        }
+        color = colors.get(obj.match_status, 'black')
+        return format_html(
+            '<span style="color: {};">{}</span>',
+            color,
+            obj.get_match_status_display()
+        )
+    match_status_display.short_description = '匹配状态'
+    
+    def customer_link(self, obj):
+        if obj.customer:
+            url = f"/admin/credit_app/customer/{obj.customer.id}/change/"
+            return format_html(
+                '<a href="{}" target="_blank">{}</a>',
+                url,
+                f"{obj.customer.name} ({obj.customer.customer_id})"
+            )
+        return "-"
+    customer_link.short_description = '匹配客户'
+    
+    actions = ['parse_selected', 'match_selected']
+    
+    def parse_selected(self, request, queryset):
+        """批量解析选中的协议"""
+        for agreement in queryset:
+            # 这里会调用解析函数
+            agreement.parsing_status = 'parsing'
+            agreement.save()
+        self.message_user(request, f"已开始解析 {queryset.count()} 个协议")
+    parse_selected.short_description = "解析选中的协议"
+    
+    def match_selected(self, request, queryset):
+        """批量匹配选中的协议"""
+        for agreement in queryset:
+            # 这里会调用匹配函数
+            agreement.match_status = 'pending'
+            agreement.save()
+        self.message_user(request, f"已开始匹配 {queryset.count()} 个协议")
+    match_selected.short_description = "匹配选中的协议"
+
+
+@admin.register(ParsingLog)
+class ParsingLogAdmin(admin.ModelAdmin):
+    list_display = ['agreement', 'log_level', 'message', 'created_at']
+    list_filter = ['log_level', 'created_at']
+    search_fields = ['message', 'agreement__file_name']
+    readonly_fields = ['id', 'created_at']
+    
+    def has_add_permission(self, request):
+        return False
