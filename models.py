@@ -1,0 +1,371 @@
+# agreements/models.py
+import uuid
+import os
+from decimal import Decimal
+from django.db import models
+from django.utils import timezone
+from credit_app.models import Customer, CreditApplication, Facility
+
+
+def agreement_upload_path(instance, filename):
+    """生成PDF文件上传路径"""
+    # 格式: agreements/year/month/filename
+    year = timezone.now().strftime('%Y')
+    month = timezone.now().strftime('%m')
+    safe_name = filename.replace(' ', '_')
+    return os.path.join('agreements', year, month, safe_name)
+
+
+class AgreementPDF(models.Model):
+    """
+    简化的PDF协议文档模型
+    只存储借款人名称、日期、授信额度
+    """
+    
+    # ========== 主键 ==========
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+        verbose_name='ID'
+    )
+    
+    # ========== 核心解析字段 ==========
+    borrower_name = models.CharField(
+        max_length=200,
+        verbose_name='借款人名称',
+        help_text='从PDF中解析出的借款人名称',
+        null=True,
+        blank=True
+    )
+    
+    agreement_date = models.DateField(
+        verbose_name='协议日期',
+        null=True,
+        blank=True
+    )
+    
+    facility_amount = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        verbose_name='授信额度',
+        null=True,
+        blank=True
+    )
+    
+    currency = models.CharField(
+        max_length=3,
+        verbose_name='货币',
+        default='HKD',
+        null=True,
+        blank=True
+    )
+    
+    # ========== 文件信息 ==========
+    original_file = models.FileField(
+        upload_to=agreement_upload_path,
+        verbose_name='原始PDF文件',
+        max_length=500
+    )
+    
+    file_name = models.CharField(
+        max_length=255,
+        verbose_name='文件名',
+        null=True,
+        blank=True
+    )
+    
+    file_size = models.IntegerField(
+        verbose_name='文件大小(字节)',
+        null=True,
+        blank=True
+    )
+    
+    uploaded_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='上传时间'
+    )
+    
+    # ========== 解析状态 ==========
+    PARSING_STATUS_CHOICES = [
+        ('uploaded', '已上传'),
+        ('parsing', '解析中'),
+        ('parsed', '已解析'),
+        ('error', '解析失败'),
+    ]
+    
+    parsing_status = models.CharField(
+        max_length=20,
+        choices=PARSING_STATUS_CHOICES,
+        default='uploaded',
+        verbose_name='解析状态'
+    )
+    
+    parsed_text = models.TextField(
+        verbose_name='解析文本',
+        null=True,
+        blank=True
+    )
+    
+    parsing_errors = models.TextField(
+        verbose_name='解析错误',
+        null=True,
+        blank=True
+    )
+    
+    parsed_at = models.DateTimeField(
+        verbose_name='解析完成时间',
+        null=True,
+        blank=True
+    )
+    
+    # ========== 匹配信息 ==========
+    MATCH_STATUS_CHOICES = [
+        ('pending', '待匹配'),
+        ('matched', '已匹配'),
+        ('multiple', '多个匹配'),
+        ('unmatched', '未匹配'),
+        ('manual_review', '需人工审核'),
+    ]
+    
+    MATCH_TYPE_CHOICES = [
+        ('customer_name', '客户名称'),
+        ('master_group_name', '集团名称'),
+        ('manual', '手动'),
+        ('none', '未匹配'),
+    ]
+    
+    # 外键关联
+    customer = models.ForeignKey(
+        Customer,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='agreements',
+        verbose_name='匹配的客户',
+        help_text='通过借款人名称匹配到的客户'
+    )
+    
+    credit_application = models.ForeignKey(
+        CreditApplication,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='agreements',
+        verbose_name='关联的信贷申请'
+    )
+    
+    facility = models.ForeignKey(
+        Facility,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='agreements',
+        verbose_name='关联的授信额度'
+    )
+    
+    match_status = models.CharField(
+        max_length=20,
+        choices=MATCH_STATUS_CHOICES,
+        default='pending',
+        verbose_name='匹配状态'
+    )
+    
+    match_type = models.CharField(
+        max_length=20,
+        choices=MATCH_TYPE_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name='匹配类型'
+    )
+    
+    match_confidence = models.FloatField(
+        verbose_name='匹配置信度',
+        null=True,
+        blank=True,
+        help_text='0-1，1为完全匹配'
+    )
+    
+    # 候选匹配（当有多个匹配时）
+    candidate_customers = models.JSONField(
+        verbose_name='候选客户',
+        default=list,
+        help_text='JSON格式存储可能的客户匹配'
+    )
+    
+    # ========== 人工验证 ==========
+    is_manually_verified = models.BooleanField(
+        default=False,
+        verbose_name='已人工验证'
+    )
+    
+    verified_by = models.CharField(
+        max_length=100,
+        verbose_name='验证人',
+        null=True,
+        blank=True
+    )
+    
+    verified_at = models.DateTimeField(
+        verbose_name='验证时间',
+        null=True,
+        blank=True
+    )
+    
+    notes = models.TextField(
+        verbose_name='备注',
+        null=True,
+        blank=True
+    )
+    
+    # ========== 元数据 ==========
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='创建时间'
+    )
+    
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name='更新时间'
+    )
+    
+    class Meta:
+        db_table = 'agreement_pdfs'
+        verbose_name = 'PDF协议文档'
+        verbose_name_plural = 'PDF协议文档'
+        ordering = ['-uploaded_at']
+        indexes = [
+            models.Index(fields=['borrower_name']),
+            models.Index(fields=['agreement_date']),
+            models.Index(fields=['parsing_status']),
+            models.Index(fields=['match_status']),
+            models.Index(fields=['customer']),
+        ]
+    
+    def __str__(self):
+        if self.file_name:
+            return f"{self.file_name}"
+        if self.borrower_name:
+            return f"协议: {self.borrower_name}"
+        return f"AgreementPDF-{self.id}"
+    
+    def save(self, *args, **kwargs):
+        """保存时自动设置文件名"""
+        if self.original_file and not self.file_name:
+            self.file_name = os.path.basename(self.original_file.name)
+        if self.original_file and not self.file_size:
+            try:
+                self.file_size = self.original_file.size
+            except:
+                pass
+        super().save(*args, **kwargs)
+    
+    def get_match_info(self):
+        """获取匹配信息"""
+        if self.customer:
+            return {
+                'customer_id': self.customer.customer_id,
+                'customer_name': self.customer.name,
+                'match_type': self.get_match_type_display() if self.match_type else None,
+                'confidence': self.match_confidence,
+            }
+        return None
+    
+    def find_matching_customer(self):
+        """
+        查找匹配的客户
+        基于borrower_name匹配customer_name或master_group_name
+        """
+        from django.db.models import Q
+        
+        if not self.borrower_name:
+            return None
+        
+        # 查找匹配的客户
+        # 1. 精确匹配customer_name
+        customers_by_name = Customer.objects.filter(
+            Q(name__iexact=self.borrower_name)
+        )
+        
+        # 2. 模糊匹配customer_name
+        if not customers_by_name.exists():
+            customers_by_name = Customer.objects.filter(
+                Q(name__icontains=self.borrower_name)
+            )
+        
+        # 3. 匹配master_group_name
+        customers_by_group = Customer.objects.filter(
+            Q(master_group_name__iexact=self.borrower_name)
+        )
+        
+        if not customers_by_group.exists():
+            customers_by_group = Customer.objects.filter(
+                Q(master_group_name__icontains=self.borrower_name)
+            )
+        
+        # 合并结果
+        all_customers = list(customers_by_name) + list(customers_by_group)
+        
+        if not all_customers:
+            return None
+        
+        # 去重
+        unique_customers = []
+        seen_ids = set()
+        for customer in all_customers:
+            if customer.id not in seen_ids:
+                seen_ids.add(customer.id)
+                unique_customers.append(customer)
+        
+        return unique_customers
+
+
+# ========== 解析日志 ==========
+class ParsingLog(models.Model):
+    """
+    解析日志
+    """
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+    
+    agreement = models.ForeignKey(
+        AgreementPDF,
+        on_delete=models.CASCADE,
+        related_name='parsing_logs',
+        verbose_name='协议文档'
+    )
+    
+    log_level = models.CharField(
+        max_length=20,
+        choices=[
+            ('info', '信息'),
+            ('warning', '警告'),
+            ('error', '错误'),
+        ],
+        default='info',
+        verbose_name='日志级别'
+    )
+    
+    message = models.TextField(
+        verbose_name='日志消息'
+    )
+    
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='记录时间'
+    )
+    
+    class Meta:
+        db_table = 'parsing_logs'
+        verbose_name = '解析日志'
+        verbose_name_plural = '解析日志'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['agreement', 'created_at']),
+        ]
+    
+    def __str__(self):
+        return f"{self.agreement.file_name} - {self.get_log_level_display()}"
