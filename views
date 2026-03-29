@@ -1,0 +1,72 @@
+# agreements/views.py
+from django.shortcuts import render, redirect, get_object_or_404
+from django.views.generic import ListView, DetailView, CreateView
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.urls import reverse_lazy
+from django.contrib import messages
+from django.db.models import Q
+from .models import AgreementPDF
+from .forms import AgreementUploadForm
+
+
+class AgreementListView(LoginRequiredMixin, ListView):
+    model = AgreementPDF
+    template_name = 'agreements/list.html'
+    context_object_name = 'agreements'
+    paginate_by = 20
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        
+        # 搜索
+        search = self.request.GET.get('search', '')
+        if search:
+            queryset = queryset.filter(
+                Q(file_name__icontains=search) |
+                Q(borrower_name__icontains=search) |
+                Q(parsed_text__icontains=search)
+            )
+        
+        # 状态过滤
+        status = self.request.GET.get('status', '')
+        if status:
+            queryset = queryset.filter(parsing_status=status)
+        
+        # 匹配状态过滤
+        match_status = self.request.GET.get('match_status', '')
+        if match_status:
+            queryset = queryset.filter(match_status=match_status)
+        
+        return queryset.select_related('customer')
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['status_choices'] = dict(AgreementPDF.PARSING_STATUS_CHOICES)
+        context['match_status_choices'] = dict(AgreementPDF.MATCH_STATUS_CHOICES)
+        return context
+
+
+class AgreementDetailView(LoginRequiredMixin, DetailView):
+    model = AgreementPDF
+    template_name = 'agreements/detail.html'
+    context_object_name = 'agreement'
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # 获取解析日志
+        context['parsing_logs'] = self.object.parsing_logs.all().order_by('-created_at')
+        return context
+
+
+class AgreementUploadView(LoginRequiredMixin, CreateView):
+    model = AgreementPDF
+    form_class = AgreementUploadForm
+    template_name = 'agreements/upload.html'
+    success_url = reverse_lazy('agreements:list')
+    
+    def form_valid(self, form):
+        form.instance.parsing_status = 'uploaded'
+        form.instance.match_status = 'pending'
+        response = super().form_valid(form)
+        messages.success(self.request, f'文件 "{form.instance.file_name}" 上传成功！')
+        return response
