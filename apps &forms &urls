@@ -52,3 +52,15 @@ class AgreementMatchForm(forms.Form):
         
         if customer_queryset:
             self.fields['customer'].queryset = customer_queryset
+
+# agreements/urls.py
+from django.urls import path
+from . import views
+
+app_name = 'agreements'
+
+urlpatterns = [
+    path('', views.AgreementListView.as_view(), name='list'),
+    path('upload/', views.AgreementUploadView.as_view(), name='upload'),
+    path('<uuid:pk>/', views.AgreementDetailView.as_view(), name='detail'),
+]
