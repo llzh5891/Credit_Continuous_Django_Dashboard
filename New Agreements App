@@ -1,0 +1,7 @@
+# 创建agreements的完整目录结构
+cd agreements
+mkdir -p parsers matchers utils templates/agreements static/agreements/js static/agreements/css
+touch parsers/__init__.py parsers/base_parser.py parsers/pdf_parser.py parsers/ocr_parser.py
+touch matchers/__init__.py matchers/customer_matcher.py matchers/agreement_matcher.py
+touch utils/__init__.py utils/file_utils.py utils/validation.py utils/constants.py
+touch __init__.py admin.py apps.py models.py views.py urls.py forms.py tests.py
