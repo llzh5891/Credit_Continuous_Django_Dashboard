@@ -11,3 +11,35 @@ mkdir utils -Force
 mkdir templates\agreements -Force
 mkdir static\agreements\js -Force
 mkdir static\agreements\css -Force
+# 在agreements目录中
+type nul > __init__.py
+type nul > admin.py
+type nul > apps.py
+type nul > models.py
+type nul > views.py
+type nul > urls.py
+type nul > forms.py
+type nul > tests.py
+
+# 在parsers目录中
+cd parsers
+type nul > __init__.py
+type nul > base_parser.py
+type nul > pdf_parser.py
+type nul > ocr_parser.py
+cd ..
+
+# 在matchers目录中
+cd matchers
+type nul > __init__.py
+type nul > customer_matcher.py
+type nul > agreement_matcher.py
+cd ..
+
+# 在utils目录中
+cd utils
+type nul > __init__.py
+type nul > file_utils.py
+type nul > validation.py
+type nul > constants.py
+cd ..
