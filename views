@@ -1,72 +1,228 @@
 # agreements/views.py
 from django.shortcuts import render, redirect, get_object_or_404
-from django.views.generic import ListView, DetailView, CreateView
+from django.views.generic import ListView, DetailView, CreateView, TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.urls import reverse_lazy
 from django.contrib import messages
-from django.db.models import Q
+from django.db.models import Q, Count
+from django.http import JsonResponse
+import json
 from .models import AgreementPDF
 from .forms import AgreementUploadForm
+from credit_app.models import Customer
+
+
+class AgreementDashboardView(LoginRequiredMixin, TemplateView):
+    """PDF协议仪表板首页"""
+    template_name = 'agreements/dashboard.html'
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        
+        # 统计信息
+        total_agreements = AgreementPDF.objects.count()
+        parsed_agreements = AgreementPDF.objects.filter(parsing_status='parsed').count()
+        matched_agreements = AgreementPDF.objects.filter(match_status='matched').count()
+        
+        context.update({
+            'total_agreements': total_agreements,
+            'parsed_agreements': parsed_agreements,
+            'matched_agreements': matched_agreements,
+            'upload_url': reverse_lazy('agreements:upload'),
+            'list_url': reverse_lazy('agreements:list'),
+        })
+        return context
 
 
 class AgreementListView(LoginRequiredMixin, ListView):
+    """协议列表页面"""
     model = AgreementPDF
     template_name = 'agreements/list.html'
     context_object_name = 'agreements'
     paginate_by = 20
     
     def get_queryset(self):
-        queryset = super().get_queryset()
+        queryset = super().get_queryset().select_related('customer')
         
-        # 搜索
-        search = self.request.GET.get('search', '')
-        if search:
+        # 搜索功能
+        search_query = self.request.GET.get('search', '').strip()
+        if search_query:
             queryset = queryset.filter(
-                Q(file_name__icontains=search) |
-                Q(borrower_name__icontains=search) |
-                Q(parsed_text__icontains=search)
+                Q(file_name__icontains=search_query) |
+                Q(borrower_name__icontains=search_query) |
+                Q(customer__name__icontains=search_query) |
+                Q(customer__customer_id__icontains=search_query)
             )
         
         # 状态过滤
-        status = self.request.GET.get('status', '')
-        if status:
-            queryset = queryset.filter(parsing_status=status)
+        parsing_status = self.request.GET.get('parsing_status', '')
+        if parsing_status:
+            queryset = queryset.filter(parsing_status=parsing_status)
         
-        # 匹配状态过滤
         match_status = self.request.GET.get('match_status', '')
         if match_status:
             queryset = queryset.filter(match_status=match_status)
         
-        return queryset.select_related('customer')
+        return queryset.order_by('-uploaded_at')
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['status_choices'] = dict(AgreementPDF.PARSING_STATUS_CHOICES)
-        context['match_status_choices'] = dict(AgreementPDF.MATCH_STATUS_CHOICES)
+        
+        # 状态统计
+        status_stats = AgreementPDF.objects.values('parsing_status').annotate(
+            count=Count('id')
+        )
+        match_stats = AgreementPDF.objects.values('match_status').annotate(
+            count=Count('id')
+        )
+        
+        context.update({
+            'parsing_status_choices': dict(AgreementPDF.PARSING_STATUS_CHOICES),
+            'match_status_choices': dict(AgreementPDF.MATCH_STATUS_CHOICES),
+            'status_stats': {item['parsing_status']: item['count'] for item in status_stats},
+            'match_stats': {item['match_status']: item['count'] for item in match_stats},
+            'search_query': self.request.GET.get('search', ''),
+        })
+        return context
+
+
+class AgreementUploadView(LoginRequiredMixin, CreateView):
+    """上传PDF页面"""
+    model = AgreementPDF
+    form_class = AgreementUploadForm
+    template_name = 'agreements/upload.html'
+    success_url = reverse_lazy('agreements:list')
+    
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        # 可以添加额外的form kwargs
+        return kwargs
+    
+    def form_valid(self, form):
+        form.instance.parsing_status = 'uploaded'
+        form.instance.match_status = 'pending'
+        form.instance.uploaded_by = self.request.user.username
+        
+        response = super().form_valid(form)
+        
+        # 这里可以启动异步解析任务
+        # parse_agreement.delay(self.object.id)
+        
+        messages.success(
+            self.request, 
+            f'PDF uploaded successfully! File: {form.instance.file_name}'
+        )
+        return response
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['dashboard_url'] = reverse_lazy('agreements:dashboard')
+        context['list_url'] = reverse_lazy('agreements:list')
         return context
 
 
 class AgreementDetailView(LoginRequiredMixin, DetailView):
+    """协议详情页面"""
     model = AgreementPDF
     template_name = 'agreements/detail.html'
     context_object_name = 'agreement'
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        
         # 获取解析日志
         context['parsing_logs'] = self.object.parsing_logs.all().order_by('-created_at')
+        
+        # 获取候选客户（用于匹配）
+        if self.object.candidate_customers:
+            candidate_ids = [c.get('customer_id') for c in self.object.candidate_customers if c.get('customer_id')]
+            if candidate_ids:
+                context['candidates'] = Customer.objects.filter(customer_id__in=candidate_ids)
+        
         return context
 
 
-class AgreementUploadView(LoginRequiredMixin, CreateView):
-    model = AgreementPDF
-    form_class = AgreementUploadForm
-    template_name = 'agreements/upload.html'
-    success_url = reverse_lazy('agreements:list')
+class ManualMatchView(LoginRequiredMixin, View):
+    """手动匹配界面"""
+    def get(self, request, pk):
+        agreement = get_object_or_404(AgreementPDF, pk=pk)
+        
+        # 查找可能的客户匹配
+        possible_customers = []
+        if agreement.borrower_name:
+            # 查找匹配的客户
+            possible_customers = Customer.objects.filter(
+                Q(name__icontains=agreement.borrower_name) |
+                Q(master_group_name__icontains=agreement.borrower_name)
+            ).distinct()[:10]  # 限制显示10个
+        
+        context = {
+            'agreement': agreement,
+            'possible_customers': possible_customers,
+        }
+        return render(request, 'agreements/manual_match.html', context)
     
-    def form_valid(self, form):
-        form.instance.parsing_status = 'uploaded'
-        form.instance.match_status = 'pending'
-        response = super().form_valid(form)
-        messages.success(self.request, f'文件 "{form.instance.file_name}" 上传成功！')
-        return response
+    def post(self, request, pk):
+        agreement = get_object_or_404(AgreementPDF, pk=pk)
+        customer_id = request.POST.get('customer_id')
+        
+        if customer_id:
+            try:
+                customer = Customer.objects.get(id=customer_id)
+                agreement.customer = customer
+                agreement.match_status = 'matched'
+                agreement.match_type = 'manual'
+                agreement.match_confidence = 1.0
+                agreement.save()
+                
+                messages.success(request, f'Successfully matched with customer: {customer.name}')
+            except Customer.DoesNotExist:
+                messages.error(request, 'Customer not found')
+        else:
+            agreement.customer = None
+            agreement.match_status = 'unmatched'
+            agreement.save()
+            messages.info(request, 'Marked as unmatched')
+        
+        return redirect('agreements:detail', pk=agreement.pk)
+
+
+# ========== API 视图 ==========
+class UploadAPIView(LoginRequiredMixin, View):
+    """AJAX上传API"""
+    def post(self, request):
+        if not request.FILES.get('pdf_file'):
+            return JsonResponse({'error': 'No file uploaded'}, status=400)
+        
+        pdf_file = request.FILES['pdf_file']
+        
+        # 保存文件
+        agreement = AgreementPDF(
+            original_file=pdf_file,
+            parsing_status='uploaded',
+            match_status='pending',
+            uploaded_by=request.user.username
+        )
+        agreement.save()
+        
+        return JsonResponse({
+            'success': True,
+            'id': str(agreement.id),
+            'filename': agreement.file_name,
+            'upload_time': agreement.uploaded_at.isoformat(),
+        })
+
+
+class StatusAPIView(LoginRequiredMixin, View):
+    """获取解析状态API"""
+    def get(self, request, pk):
+        agreement = get_object_or_404(AgreementPDF, pk=pk)
+        
+        return JsonResponse({
+            'id': str(agreement.id),
+            'parsing_status': agreement.parsing_status,
+            'match_status': agreement.match_status,
+            'borrower_name': agreement.borrower_name or '',
+            'customer_name': agreement.customer.name if agreement.customer else '',
+            'updated_at': agreement.updated_at.isoformat(),
+        })
