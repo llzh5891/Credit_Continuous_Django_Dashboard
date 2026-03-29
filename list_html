@@ -1,0 +1,470 @@
+<!-- agreements/templates/agreements/list.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agreements List</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #f5f7fa;
+            color: #333;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        /* 头部样式 */
+        .header {
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            color: #7f8c8d;
+        }
+        
+        /* 控制栏 */
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            gap: 20px;
+        }
+        
+        .search-box {
+            flex: 1;
+            max-width: 400px;
+        }
+        
+        .search-input {
+            width: 100%;
+            padding: 10px 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .filters {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .filter-select {
+            padding: 10px 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: white;
+            font-size: 14px;
+            min-width: 150px;
+        }
+        
+        .btn-primary {
+            background: #3498db;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+        }
+        
+        .btn-primary:hover {
+            background: #2980b9;
+        }
+        
+        /* 统计卡片 */
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .stat-number {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #7f8c8d;
+            text-transform: uppercase;
+        }
+        
+        /* 表格样式 */
+        .table-container {
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        th {
+            background: #f8f9fa;
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+            color: #2c3e50;
+            border-bottom: 2px solid #dee2e6;
+        }
+        
+        td {
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        tr:hover {
+            background: #f8f9fa;
+        }
+        
+        /* 状态徽章 */
+        .badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        
+        .badge-uploaded { background: #f8f9fa; color: #6c757d; }
+        .badge-parsing { background: #fff3cd; color: #856404; }
+        .badge-parsed { background: #d4edda; color: #155724; }
+        .badge-error { background: #f8d7da; color: #721c24; }
+        
+        .badge-pending { background: #f8f9fa; color: #6c757d; }
+        .badge-matched { background: #d4edda; color: #155724; }
+        .badge-unmatched { background: #f8d7da; color: #721c24; }
+        .badge-manual { background: #cce5ff; color: #004085; }
+        
+        /* 操作按钮 */
+        .action-link {
+            color: #3498db;
+            text-decoration: none;
+            font-size: 12px;
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+        
+        .action-link:hover {
+            background: #e8f4fc;
+        }
+        
+        /* 分页 */
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-top: 20px;
+            gap: 10px;
+        }
+        
+        .page-link {
+            padding: 8px 12px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            text-decoration: none;
+            color: #3498db;
+        }
+        
+        .page-link:hover {
+            background: #f8f9fa;
+        }
+        
+        .page-current {
+            padding: 8px 12px;
+            background: #3498db;
+            color: white;
+            border-radius: 4px;
+        }
+        
+        /* 空状态 */
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+        }
+        
+        .empty-icon {
+            font-size: 48px;
+            color: #bdc3c7;
+            margin-bottom: 20px;
+        }
+        
+        /* 响应式 */
+        @media (max-width: 768px) {
+            .controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .search-box {
+                max-width: 100%;
+            }
+            
+            .filters {
+                flex-direction: column;
+            }
+            
+            .filter-select {
+                width: 100%;
+            }
+            
+            th, td {
+                padding: 10px 5px;
+                font-size: 12px;
+            }
+            
+            .table-container {
+                overflow-x: auto;
+            }
+        }
+        
+        .nav-tabs {
+            display: flex;
+            border-bottom: 2px solid #dee2e6;
+            margin-bottom: 20px;
+        }
+        
+        .nav-tabs a {
+            padding: 10px 20px;
+            text-decoration: none;
+            color: #495057;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+        }
+        
+        .nav-tabs a:hover {
+            color: #0056b3;
+        }
+        
+        .nav-tabs a.active {
+            color: #0056b3;
+            border-bottom-color: #0056b3;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 头部 -->
+        <div class="header">
+            <h1>📄 PDF Agreements</h1>
+            <p>View and manage all uploaded agreement PDFs</p>
+        </div>
+        
+        <!-- 导航 -->
+        <div class="nav-tabs">
+            <a href="{% url 'agreements:dashboard' %}">Dashboard</a>
+            <a href="{% url 'agreements:list' %}" class="active">All Agreements</a>
+            <a href="{% url 'agreements:upload' %}">Upload PDF</a>
+        </div>
+        
+        <!-- 统计 -->
+        <div class="stats">
+            {% for status, label in parsing_status_choices.items %}
+            <div class="stat-card">
+                <div class="stat-number">{{ status_stats|get_item:status|default:0 }}</div>
+                <div class="stat-label">{{ label }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <!-- 控制栏 -->
+        <div class="controls">
+            <div class="search-box">
+                <form method="get" action="{% url 'agreements:list' %}">
+                    <input type="text" 
+                           name="search" 
+                           value="{{ search_query }}"
+                           placeholder="Search by filename, borrower, or customer..."
+                           class="search-input">
+                </form>
+            </div>
+            
+            <div class="filters">
+                <select class="filter-select" onchange="filterByStatus(this.value)">
+                    <option value="">All Parsing Status</option>
+                    {% for value, label in parsing_status_choices.items %}
+                    <option value="{{ value }}" {% if request.GET.parsing_status == value %}selected{% endif %}>
+                        {{ label }}
+                    </option>
+                    {% endfor %}
+                </select>
+                
+                <select class="filter-select" onchange="filterByMatchStatus(this.value)">
+                    <option value="">All Match Status</option>
+                    {% for value, label in match_status_choices.items %}
+                    <option value="{{ value }}" {% if request.GET.match_status == value %}selected{% endif %}>
+                        {{ label }}
+                    </option>
+                    {% endfor %}
+                </select>
+                
+                <a href="{% url 'agreements:upload' %}" class="btn-primary">
+                    📤 Upload New
+                </a>
+            </div>
+        </div>
+        
+        <!-- 表格 -->
+        <div class="table-container">
+            {% if agreements %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>File Name</th>
+                        <th>Borrower Name</th>
+                        <th>Agreement Date</th>
+                        <th>Facility Amount</th>
+                        <th>Parsing Status</th>
+                        <th>Match Status</th>
+                        <th>Matched Customer</th>
+                        <th>Upload Time</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for agreement in agreements %}
+                    <tr>
+                        <td>{{ agreement.file_name|truncatechars:30 }}</td>
+                        <td>{{ agreement.borrower_name|default:"-" }}</td>
+                        <td>
+                            {% if agreement.agreement_date %}
+                                {{ agreement.agreement_date|date:"Y-m-d" }}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if agreement.facility_amount %}
+                                {{ agreement.facility_amount }} {{ agreement.currency|default:"HKD" }}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge badge-{{ agreement.parsing_status }}">
+                                {{ agreement.get_parsing_status_display }}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="badge badge-{{ agreement.match_status }}">
+                                {{ agreement.get_match_status_display }}
+                            </span>
+                        </td>
+                        <td>
+                            {% if agreement.customer %}
+                                <a href="{% url 'admin:credit_app_customer_change' agreement.customer.id %}" 
+                                   target="_blank" 
+                                   style="color: #3498db;">
+                                    {{ agreement.customer.name }}
+                                </a>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td>{{ agreement.uploaded_at|date:"Y-m-d H:i" }}</td>
+                        <td>
+                            <a href="{% url 'agreements:detail' agreement.pk %}" class="action-link">View</a>
+                            {% if agreement.match_status != 'matched' %}
+                            <a href="{% url 'agreements:manual_match' agreement.pk %}" class="action-link">Match</a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="empty-state">
+                <div class="empty-icon">📁</div>
+                <h3>No Agreements Found</h3>
+                <p>Upload your first PDF agreement to get started</p>
+                <a href="{% url 'agreements:upload' %}" class="btn-primary" style="margin-top: 20px;">
+                    📤 Upload First Agreement
+                </a>
+            </div>
+            {% endif %}
+        </div>
+        
+        <!-- 分页 -->
+        {% if is_paginated %}
+        <div class="pagination">
+            {% if page_obj.has_previous %}
+            <a href="?page={{ page_obj.previous_page_number }}{% for key,value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}" 
+               class="page-link">← Previous</a>
+            {% endif %}
+            
+            <span class="page-current">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+            
+            {% if page_obj.has_next %}
+            <a href="?page={{ page_obj.next_page_number }}{% for key,value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}" 
+               class="page-link">Next →</a>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+
+    <script>
+        // 自定义模板过滤器
+        function get_item(dictionary, key) {
+            return dictionary[key] || 0;
+        }
+        
+        // 状态过滤
+        function filterByStatus(status) {
+            const url = new URL(window.location.href);
+            if (status) {
+                url.searchParams.set('parsing_status', status);
+            } else {
+                url.searchParams.delete('parsing_status');
+            }
+            window.location.href = url.toString();
+        }
+        
+        function filterByMatchStatus(status) {
+            const url = new URL(window.location.href);
+            if (status) {
+                url.searchParams.set('match_status', status);
+            } else {
+                url.searchParams.delete('match_status');
+            }
+            window.location.href = url.toString();
+        }
+    </script>
+</body>
+</html>
