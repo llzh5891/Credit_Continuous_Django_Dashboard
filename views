@@ -1,15 +1,20 @@
 # agreements/views.py
 from django.shortcuts import render, redirect, get_object_or_404
-from django.views.generic import ListView, DetailView, CreateView, TemplateView
+from django.views.generic import ListView, DetailView, CreateView, TemplateView, View  # 添加View
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.urls import reverse_lazy
 from django.contrib import messages
 from django.db.models import Q, Count
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponseRedirect
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
 import json
-from .models import AgreementPDF
+import os
+from decimal import Decimal
+import uuid
+from .models import AgreementPDF, ParsingLog
 from .forms import AgreementUploadForm
-from credit_app.models import Customer
+from credit_app.models import Customer, CreditApplication, Facility
 
 
 class AgreementDashboardView(LoginRequiredMixin, TemplateView):
@@ -95,24 +100,62 @@ class AgreementUploadView(LoginRequiredMixin, CreateView):
     
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
-        # 可以添加额外的form kwargs
         return kwargs
     
     def form_valid(self, form):
         form.instance.parsing_status = 'uploaded'
         form.instance.match_status = 'pending'
-        form.instance.uploaded_by = self.request.user.username
+        
+        # 这里可以添加上传者的信息
+        if self.request.user.is_authenticated:
+            form.instance.uploaded_by = self.request.user.username
         
         response = super().form_valid(form)
         
-        # 这里可以启动异步解析任务
+        # 启动解析任务（这里可以调用你的解析函数）
         # parse_agreement.delay(self.object.id)
+        
+        # 简单解析文件名（实际项目中应该用解析器）
+        self.extract_from_filename(self.object)
         
         messages.success(
             self.request, 
             f'PDF uploaded successfully! File: {form.instance.file_name}'
         )
         return response
+    
+    def extract_from_filename(self, agreement):
+        """
+        简单解析文件名提取信息
+        实际项目中应该用PDF解析器
+        """
+        filename = agreement.file_name or ''
+        
+        # 这里添加你的文件名解析逻辑
+        # 例如: "CustomerName_20240101_1000000.pdf"
+        if '_' in filename:
+            parts = filename.replace('.pdf', '').replace('.PDF', '').split('_')
+            if len(parts) >= 3:
+                agreement.borrower_name = parts[0]
+                try:
+                    # 假设第二部分是日期
+                    date_str = parts[1]
+                    if len(date_str) == 8 and date_str.isdigit():
+                        from datetime import datetime
+                        date_obj = datetime.strptime(date_str, '%Y%m%d').date()
+                        agreement.agreement_date = date_obj
+                except:
+                    pass
+                
+                try:
+                    # 假设第三部分是金额
+                    amount_str = parts[2]
+                    agreement.facility_amount = Decimal(amount_str)
+                except:
+                    pass
+        
+        agreement.parsing_status = 'parsed'
+        agreement.save()
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -135,9 +178,12 @@ class AgreementDetailView(LoginRequiredMixin, DetailView):
         
         # 获取候选客户（用于匹配）
         if self.object.candidate_customers:
-            candidate_ids = [c.get('customer_id') for c in self.object.candidate_customers if c.get('customer_id')]
-            if candidate_ids:
-                context['candidates'] = Customer.objects.filter(customer_id__in=candidate_ids)
+            try:
+                candidate_ids = [c.get('customer_id') for c in self.object.candidate_customers if c.get('customer_id')]
+                if candidate_ids:
+                    context['candidates'] = Customer.objects.filter(customer_id__in=candidate_ids)
+            except:
+                context['candidates'] = Customer.objects.none()
         
         return context
 
@@ -156,9 +202,13 @@ class ManualMatchView(LoginRequiredMixin, View):
                 Q(master_group_name__icontains=agreement.borrower_name)
             ).distinct()[:10]  # 限制显示10个
         
+        # 获取所有客户（用于下拉列表）
+        all_customers = Customer.objects.all().order_by('name')[:100]  # 限制数量
+        
         context = {
             'agreement': agreement,
             'possible_customers': possible_customers,
+            'all_customers': all_customers,
         }
         return render(request, 'agreements/manual_match.html', context)
     
@@ -173,6 +223,9 @@ class ManualMatchView(LoginRequiredMixin, View):
                 agreement.match_status = 'matched'
                 agreement.match_type = 'manual'
                 agreement.match_confidence = 1.0
+                agreement.is_manually_verified = True
+                agreement.verified_by = request.user.username
+                agreement.verified_at = timezone.now()
                 agreement.save()
                 
                 messages.success(request, f'Successfully matched with customer: {customer.name}')
@@ -196,13 +249,24 @@ class UploadAPIView(LoginRequiredMixin, View):
         
         pdf_file = request.FILES['pdf_file']
         
+        # 检查文件类型
+        if not pdf_file.name.lower().endswith('.pdf'):
+            return JsonResponse({'error': 'Only PDF files are allowed'}, status=400)
+        
+        # 检查文件大小
+        if pdf_file.size > 10 * 1024 * 1024:  # 10MB
+            return JsonResponse({'error': 'File size must be less than 10MB'}, status=400)
+        
         # 保存文件
         agreement = AgreementPDF(
             original_file=pdf_file,
             parsing_status='uploaded',
-            match_status='pending',
-            uploaded_by=request.user.username
+            match_status='pending'
         )
+        
+        if request.user.is_authenticated:
+            agreement.uploaded_by = request.user.username
+        
         agreement.save()
         
         return JsonResponse({
@@ -224,5 +288,118 @@ class StatusAPIView(LoginRequiredMixin, View):
             'match_status': agreement.match_status,
             'borrower_name': agreement.borrower_name or '',
             'customer_name': agreement.customer.name if agreement.customer else '',
+            'customer_id': str(agreement.customer.id) if agreement.customer else '',
             'updated_at': agreement.updated_at.isoformat(),
         })
+
+
+# ========== 工具函数 ==========
+def parse_pdf_agreement(agreement_id):
+    """
+    解析PDF协议的函数
+    这里只是示例，实际应该用PyPDF2、pdfplumber等库
+    """
+    try:
+        agreement = AgreementPDF.objects.get(id=agreement_id)
+        agreement.parsing_status = 'parsing'
+        agreement.save()
+        
+        # 记录开始解析
+        ParsingLog.objects.create(
+            agreement=agreement,
+            log_level='info',
+            message=f'Started parsing PDF: {agreement.file_name}'
+        )
+        
+        # TODO: 这里添加实际的PDF解析逻辑
+        # 使用 PyPDF2 或 pdfplumber 提取文本
+        # 然后使用正则表达式提取 borrower_name, agreement_date, facility_amount
+        
+        # 示例解析结果
+        agreement.borrower_name = "Sample Borrower"
+        agreement.agreement_date = "2024-01-01"
+        agreement.facility_amount = 1000000.00
+        agreement.currency = "HKD"
+        agreement.parsing_status = 'parsed'
+        agreement.parsed_at = timezone.now()
+        agreement.save()
+        
+        # 尝试自动匹配客户
+        match_customer(agreement)
+        
+        # 记录成功
+        ParsingLog.objects.create(
+            agreement=agreement,
+            log_level='info',
+            message=f'Successfully parsed and extracted data'
+        )
+        
+    except Exception as e:
+        agreement = AgreementPDF.objects.get(id=agreement_id)
+        agreement.parsing_status = 'error'
+        agreement.parsing_errors = str(e)
+        agreement.save()
+        
+        ParsingLog.objects.create(
+            agreement=agreement,
+            log_level='error',
+            message=f'Parsing error: {str(e)}'
+        )
+
+
+def match_customer(agreement):
+    """
+    自动匹配客户
+    """
+    if not agreement.borrower_name:
+        agreement.match_status = 'unmatched'
+        agreement.save()
+        return
+    
+    # 查找匹配的客户
+    customers = agreement.find_matching_customer()
+    
+    if not customers:
+        agreement.match_status = 'unmatched'
+        agreement.save()
+        return
+    
+    if len(customers) == 1:
+        # 唯一匹配
+        agreement.customer = customers[0]
+        agreement.match_status = 'matched'
+        agreement.match_type = 'customer_name'  # 或 'master_group_name'
+        agreement.match_confidence = 0.9
+        agreement.save()
+        
+        # 记录匹配
+        ParsingLog.objects.create(
+            agreement=agreement,
+            log_level='info',
+            message=f'Matched with customer: {customers[0].name}'
+        )
+    else:
+        # 多个匹配，需要人工审核
+        agreement.match_status = 'manual_review'
+        agreement.match_confidence = 0.5
+        
+        # 保存候选客户
+        candidate_data = []
+        for customer in customers:
+            candidate_data.append({
+                'customer_id': customer.customer_id,
+                'name': customer.name,
+                'master_group_name': customer.master_group_name,
+            })
+        agreement.candidate_customers = candidate_data
+        agreement.save()
+        
+        ParsingLog.objects.create(
+            agreement=agreement,
+            log_level='warning',
+            message=f'Multiple matches found: {len(customers)} customers'
+        )
+
+
+# ========== 确保导入 timezone ==========
+from django.utils import timezone
