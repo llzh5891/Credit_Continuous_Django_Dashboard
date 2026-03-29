@@ -64,3 +64,17 @@ urlpatterns = [
     path('upload/', views.AgreementUploadView.as_view(), name='upload'),
     path('<uuid:pk>/', views.AgreementDetailView.as_view(), name='detail'),
 ]
+
+# credit_continuous_dashboard/settings.py
+INSTALLED_APPS = [
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+    
+    # 你的应用
+    'credit_app',
+    'agreements',  # 新增
+]
