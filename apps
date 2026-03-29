@@ -1,0 +1,54 @@
+# agreements/apps.py
+from django.apps import AppConfig
+
+
+class AgreementsConfig(AppConfig):
+    default_auto_field = 'django.db.models.BigAutoField'
+    name = 'agreements'
+    verbose_name = '协议管理'
+
+
+# agreements/forms.py
+from django import forms
+from .models import AgreementPDF
+
+
+class AgreementUploadForm(forms.ModelForm):
+    class Meta:
+        model = AgreementPDF
+        fields = ['original_file']
+        widgets = {
+            'original_file': forms.ClearableFileInput(attrs={
+                'multiple': False,
+                'accept': '.pdf,.PDF',
+            }),
+        }
+    
+    def clean_original_file(self):
+        file = self.cleaned_data.get('original_file')
+        if file:
+            # 检查文件类型
+            if not file.name.lower().endswith('.pdf'):
+                raise forms.ValidationError('只支持PDF文件')
+            
+            # 检查文件大小 (限制为10MB)
+            if file.size > 10 * 1024 * 1024:
+                raise forms.ValidationError('文件大小不能超过10MB')
+        
+        return file
+
+
+class AgreementMatchForm(forms.Form):
+    """手动匹配表单"""
+    customer = forms.ModelChoiceField(
+        queryset=None,
+        label="选择客户",
+        required=False
+    )
+    
+    def __init__(self, *args, **kwargs):
+        customer_queryset = kwargs.pop('customer_queryset', None)
+        super().__init__(*args, **kwargs)
+        
+        if customer_queryset:
+            self.fields['customer'].queryset = customer_queryset
