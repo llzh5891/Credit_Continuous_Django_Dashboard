@@ -1,0 +1,17 @@
+<!-- 在maindashboard.html的合适位置添加 -->
+<div class="agreement-section" style="margin: 20px 0; padding: 20px; background: #f8f9fa; border-radius: 8px;">
+    <h3 style="margin-top: 0;">📄 PDF Agreements</h3>
+    <p style="color: #666; margin-bottom: 15px;">
+        Upload and manage PDF agreements. The system will automatically parse and match them with customer data.
+    </p>
+    <div style="display: flex; gap: 10px;">
+        <a href="/agreements/" 
+           style="background: #3498db; color: white; padding: 10px 20px; border-radius: 4px; text-decoration: none;">
+            Go to Agreements Dashboard
+        </a>
+        <a href="/agreements/upload/" 
+           style="background: #2ecc71; color: white; padding: 10px 20px; border-radius: 4px; text-decoration: none;">
+            Upload New PDF
+        </a>
+    </div>
+</div>
