@@ -16,6 +16,28 @@ from .models import AgreementPDF, ParsingLog
 from .forms import AgreementUploadForm
 from credit_app.models import Customer, CreditApplication, Facility
 
+# agreements/views.py 中的 AgreementListView
+def get_context_data(self, **kwargs):
+    context = super().get_context_data(**kwargs)
+    
+    # 状态统计
+    status_stats = {}
+    for status_value, _ in AgreementPDF.PARSING_STATUS_CHOICES:
+        status_stats[status_value] = AgreementPDF.objects.filter(parsing_status=status_value).count()
+    
+    match_stats = {}
+    for status_value, _ in AgreementPDF.MATCH_STATUS_CHOICES:
+        match_stats[status_value] = AgreementPDF.objects.filter(match_status=status_value).count()
+    
+    context.update({
+        'parsing_status_choices': dict(AgreementPDF.PARSING_STATUS_CHOICES),
+        'match_status_choices': dict(AgreementPDF.MATCH_STATUS_CHOICES),
+        'status_stats': status_stats,
+        'match_stats': match_stats,
+        'search_query': self.request.GET.get('search', ''),
+    })
+    return context
+
 
 class AgreementDashboardView(LoginRequiredMixin, TemplateView):
     """PDF协议仪表板首页"""
