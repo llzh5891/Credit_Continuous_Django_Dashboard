@@ -295,14 +295,19 @@
         </div>
         
         <!-- 统计 -->
-        <div class="stats">
-            {% for status, label in parsing_status_choices.items %}
-            <div class="stat-card">
-                <div class="stat-number">{{ status_stats|get_item:status|default:0 }}</div>
-                <div class="stat-label">{{ label }}</div>
-            </div>
-            {% endfor %}
-        </div>
+        <!-- 修改list.html中的统计部分 -->
+				<div class="stats">
+				    {% for status_value, status_label in parsing_status_choices.items %}
+				    <div class="stat-card">
+				        <!-- 使用 .get() 方法 -->
+				        <div class="stat-number">
+				            {{ status_stats.get|default:0 }}
+				        </div>
+				        <div class="stat-label">{{ status_label }}</div>
+				    </div>
+				    {% endfor %}
+</div>
+
         
         <!-- 控制栏 -->
         <div class="controls">
