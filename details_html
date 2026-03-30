@@ -226,6 +226,11 @@
             opacity: 0.5;
         }
         
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
         @media (max-width: 768px) {
             .content-grid {
                 grid-template-columns: 1fr;
@@ -233,6 +238,15 @@
             
             .info-grid {
                 grid-template-columns: 1fr;
+            }
+            
+            .actions {
+                flex-direction: column;
+            }
+            
+            .btn {
+                width: 100%;
+                justify-content: center;
             }
         }
     </style>
@@ -272,7 +286,7 @@
                             <div class="info-label">File Size</div>
                             <div class="info-value">
                                 {% if agreement.file_size %}
-                                    {{ agreement.file_size|filesizeformat }}
+                                    {{ agreement.get_file_size_display }}
                                 {% else %}
                                     -
                                 {% endif %}
@@ -295,9 +309,13 @@
                             <strong>{{ agreement.file_name }}</strong>
                             <p>PDF Document</p>
                             {% if agreement.original_file %}
-                            <a href="{{ agreement.original_file.url }}" target="_blank" class="btn btn-primary">
+                            <a href="{{ agreement.get_file_url }}" target="_blank" class="btn btn-primary">
                                 Download PDF
                             </a>
+                            {% else %}
+                            <button class="btn btn-primary" disabled>
+                                No File Available
+                            </button>
                             {% endif %}
                         </div>
                     </div>
@@ -402,7 +420,7 @@
                             </div>
                         </div>
                     </div>
-                    {% elif agreement.match_status == 'multiple' %}
+                    {% elif agreement.match_status == 'manual_review' %}
                     <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 20px; border-radius: 4px; margin-top: 20px;">
                         <h3 style="margin-top: 0; color: #856404;">⚠️ Multiple Matches Found</h3>
                         <p>Please manually select the correct customer.</p>
@@ -410,29 +428,37 @@
                     {% elif agreement.match_status == 'unmatched' %}
                     <div style="background: #f8d7da; border-left: 4px solid #dc3545; padding: 20px; border-radius: 4px; margin-top: 20px;">
                         <h3 style="margin-top: 0; color: #721c24;">❌ No Match Found</h3>
-                        <p>No matching customer found for "{{ agreement.borrower_name }}".</p>
+                        <p>No matching customer found for "{{ agreement.borrower_name|default:'Unknown' }}".</p>
                     </div>
                     {% endif %}
                     
                     <div class="actions">
-                        <a href="{% url 'agreements:manual_match' agreement.pk %}" class="btn btn-primary">
+                        <a href="{% url 'agreements:manual_match' pk=agreement.pk %}" class="btn btn-primary">
                             🔍 Manual Match
                         </a>
                         
-                        {% if agreement.match_status == 'matched' and agreement.customer %}
+                        {% if agreement.customer %}
                         <a href="{% url 'admin:credit_app_customer_change' agreement.customer.id %}" 
                            target="_blank" 
                            class="btn btn-secondary">
                             👤 View Customer
                         </a>
+                        {% else %}
+                        <button class="btn btn-secondary" disabled>
+                            👤 No Customer
+                        </button>
                         {% endif %}
                         
                         {% if agreement.original_file %}
-                        <a href="{{ agreement.original_file.url }}" 
+                        <a href="{{ agreement.get_file_url }}" 
                            target="_blank" 
                            class="btn btn-success">
                             📄 View PDF
                         </a>
+                        {% else %}
+                        <button class="btn btn-success" disabled>
+                            📄 No PDF
+                        </button>
                         {% endif %}
                     </div>
                 </div>
