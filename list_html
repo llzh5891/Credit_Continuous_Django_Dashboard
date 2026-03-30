@@ -306,7 +306,7 @@
 				        <div class="stat-label">{{ status_label }}</div>
 				    </div>
 				    {% endfor %}
-</div>
+				</div>
 
         
         <!-- 控制栏 -->
