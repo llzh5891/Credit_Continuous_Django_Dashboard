@@ -229,12 +229,6 @@ class AgreementPDF(models.Model):
         verbose_name='更新时间'
     )
 
-    def get_file_url(self):
-        """获取文件URL"""
-        if self.original_file and hasattr(self.original_file, 'url'):
-            return self.original_file.url
-        return None
-    
     class Meta:
         db_table = 'agreement_pdfs'
         verbose_name = 'PDF协议文档'
@@ -247,7 +241,43 @@ class AgreementPDF(models.Model):
             models.Index(fields=['match_status']),
             models.Index(fields=['customer']),
         ]
-    
+
+    def get_file_url(self):
+        """获取文件URL"""
+        if self.original_file and hasattr(self.original_file, 'url'):
+            return self.original_file.url
+        return None
+
+    # 在AgreementPDF类中添加这个方法
+    def get_file_size_display(self):
+        """将字节数格式化为可读的大小（KB, MB, GB）"""
+        if not self.file_size:
+            return "Unknown"
+        
+        # 将文件大小转换为KB, MB, GB
+        size_in_bytes = self.file_size
+        
+        # 如果已经是Decimal类型，转换为float
+        if isinstance(size_in_bytes, Decimal):
+            size_in_bytes = float(size_in_bytes)
+        elif not isinstance(size_in_bytes, (int, float)):
+            try:
+                size_in_bytes = float(size_in_bytes)
+            except (ValueError, TypeError):
+                return "Unknown"
+        
+        # 格式化显示
+        units = ['bytes', 'KB', 'MB', 'GB', 'TB']
+        
+        for unit in units:
+            if size_in_bytes < 1024.0 or unit == 'TB':
+                if unit == 'bytes':
+                    return f"{size_in_bytes:.0f} {unit}"
+                else:
+                    return f"{size_in_bytes:.2f} {unit}"
+            size_in_bytes /= 1024.0
+        
+        return f"{size_in_bytes:.2f} GB"
     def __str__(self):
         if self.file_name:
             return f"{self.file_name}"
