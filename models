@@ -228,6 +228,12 @@ class AgreementPDF(models.Model):
         auto_now=True,
         verbose_name='更新时间'
     )
+
+    def get_file_url(self):
+        """获取文件URL"""
+        if self.original_file and hasattr(self.original_file, 'url'):
+            return self.original_file.url
+        return None
     
     class Meta:
         db_table = 'agreement_pdfs'
