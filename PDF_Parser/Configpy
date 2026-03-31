@@ -1,0 +1,88 @@
+"""
+PDF解析器配置文件
+"""
+
+import re
+from dataclasses import dataclass
+from typing import Dict, List, Pattern
+from enum import Enum
+
+class LogLevel(Enum):
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+
+@dataclass
+class ParserConfig:
+    """解析器配置类"""
+    
+    # 借款人名称匹配规则
+    BORROWER_PATTERNS: List[Dict[str, Pattern]] = [
+        {
+            "pattern": re.compile(r'(?:借款人|Borrower|甲方)[:：]\s*([^\n\r]{1,100})', re.IGNORECASE),
+            "weight": 1.0
+        },
+        {
+            "pattern": re.compile(r'(?:借款人|Borrower|甲方)\s+(.+?)(?=\n|$|，|,)', re.IGNORECASE),
+            "weight": 0.9
+        },
+        {
+            "pattern": re.compile(r'^(.+?)(?:\s+)?(?:作为借款人|as Borrower)', re.IGNORECASE),
+            "weight": 0.8
+        }
+    ]
+    
+    # 日期匹配规则
+    DATE_PATTERNS: List[Dict[str, Pattern]] = [
+        {
+            "pattern": re.compile(r'(?:日期|Date|签订日期)[:：]\s*(\d{4}[-/年]\d{1,2}[-/月]\d{1,2}日?)'),
+            "weight": 1.0
+        },
+        {
+            "pattern": re.compile(r'(?:日期|Date)[:：]\s*(\d{1,2}/\d{1,2}/\d{4})'),
+            "weight": 0.9
+        },
+        {
+            "pattern": re.compile(r'(\d{4}年\d{1,2}月\d{1,2}日)'),
+            "weight": 0.8
+        },
+        {
+            "pattern": re.compile(r'(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}', re.IGNORECASE),
+            "weight": 0.7
+        }
+    ]
+    
+    # 金额匹配规则
+    AMOUNT_PATTERNS: List[Dict[str, Pattern]] = [
+        {
+            "pattern": re.compile(r'(?:金额|Amount|融资金额)[:：]\s*([A-Z]{3})\s*([0-9,]+(?:\.\d{2})?)'),
+            "weight": 1.0
+        },
+        {
+            "pattern": re.compile(r'([A-Z]{3})\s*([0-9,]+(?:\.\d{2})?)(?:\s*(?:美元|港币|人民币|港元))?'),
+            "weight": 0.9
+        },
+        {
+            "pattern": re.compile(r'([0-9,]+(?:\.\d{2})?)\s*(?:美元|港币|人民币|港元|HKD|USD|CNY|EUR)'),
+            "weight": 0.8
+        },
+        {
+            "pattern": re.compile(r'(?:HK\$\s*|\$\s*|￥\s*|€\s*)([0-9,]+(?:\.\d{2})?)'),
+            "weight": 0.7
+        }
+    ]
+    
+    # 日志配置
+    LOG_LEVEL: LogLevel = LogLevel.INFO
+    LOG_FORMAT: str = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    
+    # 性能配置
+    MAX_FILE_SIZE_MB: int = 50
+    TIMEOUT_SECONDS: int = 30
+    CHUNK_SIZE: int = 4096
+    
+    # 提取配置
+    EXTRACT_TEXT_ONLY: bool = True  # 是否只提取文本
+    REMOVE_HEADER_FOOTER: bool = True  # 是否尝试移除页眉页脚
+    MIN_CONFIDENCE: float = 0.6  # 最低置信度
