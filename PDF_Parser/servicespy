@@ -1,0 +1,221 @@
+"""
+Django服务层 - 集成PDF解析器到现有项目
+"""
+
+import os
+import logging
+from django.db import transaction
+from django.core.files.storage import default_storage
+from django.utils import timezone
+from django.db.models import Q
+
+from .loan_agreement_parser import LoanAgreementParser
+from .config import ParserConfig
+from .exceptions import ParserError
+
+logger = logging.getLogger(__name__)
+
+class AgreementParsingService:
+    """协议解析服务"""
+    
+    def __init__(self, config: ParserConfig = None):
+        """
+        初始化解析服务
+        
+        Args:
+            config: 解析器配置
+        """
+        self.config = config or ParserConfig()
+        self.parser = LoanAgreementParser(self.config)
+    
+    def parse_agreement(self, agreement_pdf) -> dict:
+        """
+        解析单个协议PDF
+        
+        Args:
+            agreement_pdf: AgreementPDF实例
+            
+        Returns:
+            解析结果
+        """
+        logger.info(f"开始解析协议: {agreement_pdf.id} - {agreement_pdf.file_name}")
+        
+        try:
+            # 更新状态为解析中
+            agreement_pdf.parsing_status = 'parsing'
+            agreement_pdf.save(update_fields=['parsing_status', 'updated_at'])
+            
+            # 获取文件路径
+            if hasattr(agreement_pdf.original_file, 'path'):
+                file_path = agreement_pdf.original_file.path
+            else:
+                # 处理存储在后端的文件
+                from django.core.files.base import ContentFile
+                file_content = agreement_pdf.original_file.read()
+                
+                # 保存到临时文件
+                import tempfile
+                with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_file:
+                    tmp_file.write(file_content)
+                    file_path = tmp_file.name
+            
+            # 解析PDF
+            result = self.parser.parse(file_path)
+            
+            # 保存解析结果
+            self._save_parsing_result(agreement_pdf, result)
+            
+            # 更新状态
+            agreement_pdf.parsing_status = 'parsed'
+            agreement_pdf.save(update_fields=['parsing_status', 'updated_at'])
+            
+            logger.info(f"协议解析完成: {agreement_pdf.id}")
+            return result
+            
+        except ParserError as e:
+            logger.error(f"协议解析失败: {agreement_pdf.id}, 错误: {str(e)}")
+            
+            # 更新状态为错误
+            agreement_pdf.parsing_status = 'error'
+            agreement_pdf.save(update_fields=['parsing_status', 'updated_at'])
+            
+            raise
+            
+        except Exception as e:
+            logger.error(f"协议解析发生未知错误: {agreement_pdf.id}, 错误: {str(e)}", exc_info=True)
+            
+            agreement_pdf.parsing_status = 'error'
+            agreement_pdf.save(update_fields=['parsing_status', 'updated_at'])
+            
+            raise ParserError(f"解析过程中发生未知错误: {str(e)}")
+    
+    def _save_parsing_result(self, agreement_pdf, result: dict):
+        """
+        保存解析结果到数据库
+        
+        Args:
+            agreement_pdf: AgreementPDF实例
+            result: 解析结果
+        """
+        # 保存解析的文本
+        agreement_pdf.parsed_text = result.get('raw_text', '')[:10000]  # 限制长度
+        
+        # 保存核心字段
+        if result.get('borrower_name'):
+            agreement_pdf.borrower_name = result['borrower_name'][:500]  # 限制长度
+        
+        if result.get('agreement_date'):
+            agreement_pdf.agreement_date = result['agreement_date']
+        
+        if result.get('facility_amount'):
+            agreement_pdf.facility_amount = result['facility_amount']
+        
+        if result.get('currency'):
+            agreement_pdf.currency = result['currency']
+        
+        # 保存其他信息到JSON字段（如果有）
+        if hasattr(agreement_pdf, 'parsing_result'):
+            agreement_pdf.parsing_result = {
+                'extraction_details': result.get('extraction_details', {}),
+                'confidence_scores': {
+                    'borrower': result.get('borrower_confidence'),
+                    'date': result.get('date_confidence'),
+                    'amount': result.get('amount_confidence'),
+                    'currency': result.get('currency_confidence'),
+                    'overall': result.get('overall_confidence')
+                },
+                'warnings': result.get('warnings', []),
+                'metadata': result.get('metadata', {})
+            }
+        
+        agreement_pdf.save()
+    
+    def batch_parse_agreements(self, agreement_ids: list) -> dict:
+        """
+        批量解析协议
+        
+        Args:
+            agreement_ids: 协议ID列表
+            
+        Returns:
+            批量处理结果
+        """
+        from .models import AgreementPDF
+        
+        results = {
+            'total': len(agreement_ids),
+            'success': 0,
+            'failed': 0,
+            'errors': []
+        }
+        
+        for agreement_id in agreement_ids:
+            try:
+                agreement = AgreementPDF.objects.get(id=agreement_id)
+                self.parse_agreement(agreement)
+                results['success'] += 1
+                
+            except AgreementPDF.DoesNotExist:
+                error_msg = f"协议不存在: {agreement_id}"
+                logger.error(error_msg)
+                results['errors'].append(error_msg)
+                results['failed'] += 1
+                
+            except ParserError as e:
+                error_msg = f"协议解析失败: {agreement_id}, 错误: {str(e)}"
+                logger.error(error_msg)
+                results['errors'].append(error_msg)
+                results['failed'] += 1
+        
+        logger.info(f"批量解析完成: 总数={results['total']}, 成功={results['success']}, 失败={results['failed']}")
+        return results
+
+def parse_and_save_agreement(agreement_id: int) -> dict:
+    """
+    解析PDF并保存到数据库
+    
+    Args:
+        agreement_id: 协议ID
+        
+    Returns:
+        解析结果
+    """
+    from .models import AgreementPDF
+    
+    logger.info(f"开始处理协议解析任务: {agreement_id}")
+    
+    try:
+        agreement = AgreementPDF.objects.get(id=agreement_id)
+        
+        # 检查是否已解析
+        if agreement.parsing_status == 'parsed':
+            logger.warning(f"协议 {agreement_id} 已解析，跳过")
+            return {'status': 'skipped', 'message': 'Already parsed'}
+        
+        # 创建解析服务
+        service = AgreementParsingService()
+        
+        # 解析协议
+        result = service.parse_agreement(agreement)
+        
+        logger.info(f"协议解析任务完成: {agreement_id}")
+        return {
+            'status': 'success',
+            'agreement_id': agreement_id,
+            'result': {
+                'borrower_name': agreement.borrower_name,
+                'agreement_date': agreement.agreement_date,
+                'facility_amount': agreement.facility_amount,
+                'currency': agreement.currency
+            }
+        }
+        
+    except AgreementPDF.DoesNotExist:
+        error_msg = f"协议不存在: {agreement_id}"
+        logger.error(error_msg)
+        return {'status': 'error', 'message': error_msg}
+        
+    except Exception as e:
+        error_msg = f"协议解析失败: {agreement_id}, 错误: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return {'status': 'error', 'message': error_msg}
