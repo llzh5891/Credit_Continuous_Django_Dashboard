@@ -1,11 +1,17 @@
 """
-PDF解析器配置文件
+配置管理模块 - 加载和管理配置文件
 """
 
-import re
-from dataclasses import dataclass
-from typing import Dict, List, Pattern
+import os
+import yaml
+import logging
+from typing import Dict, Any, Optional, List
+from dataclasses import dataclass, field
 from enum import Enum
+import re
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 class LogLevel(Enum):
     DEBUG = "DEBUG"
@@ -14,75 +20,420 @@ class LogLevel(Enum):
     ERROR = "ERROR"
 
 @dataclass
+class PatternConfig:
+    """正则表达式模式配置"""
+    pattern: str
+    weight: float = 1.0
+    compiled_pattern: Optional[Any] = field(default=None, init=False, repr=False)
+    
+    def __post_init__(self):
+        """编译正则表达式"""
+        try:
+            self.compiled_pattern = re.compile(self.pattern, re.IGNORECASE | re.UNICODE)
+        except re.error as e:
+            logger.error(f"正则表达式编译失败: {self.pattern}, 错误: {e}")
+            self.compiled_pattern = None
+
+@dataclass
 class ParserConfig:
-    """解析器配置类"""
-    
-    # 借款人名称匹配规则
-    BORROWER_PATTERNS: List[Dict[str, Pattern]] = [
-        {
-            "pattern": re.compile(r'(?:借款人|Borrower|甲方)[:：]\s*([^\n\r]{1,100})', re.IGNORECASE),
-            "weight": 1.0
-        },
-        {
-            "pattern": re.compile(r'(?:借款人|Borrower|甲方)\s+(.+?)(?=\n|$|，|,)', re.IGNORECASE),
-            "weight": 0.9
-        },
-        {
-            "pattern": re.compile(r'^(.+?)(?:\s+)?(?:作为借款人|as Borrower)', re.IGNORECASE),
-            "weight": 0.8
-        }
-    ]
-    
-    # 日期匹配规则
-    DATE_PATTERNS: List[Dict[str, Pattern]] = [
-        {
-            "pattern": re.compile(r'(?:日期|Date|签订日期)[:：]\s*(\d{4}[-/年]\d{1,2}[-/月]\d{1,2}日?)'),
-            "weight": 1.0
-        },
-        {
-            "pattern": re.compile(r'(?:日期|Date)[:：]\s*(\d{1,2}/\d{1,2}/\d{4})'),
-            "weight": 0.9
-        },
-        {
-            "pattern": re.compile(r'(\d{4}年\d{1,2}月\d{1,2}日)'),
-            "weight": 0.8
-        },
-        {
-            "pattern": re.compile(r'(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}', re.IGNORECASE),
-            "weight": 0.7
-        }
-    ]
-    
-    # 金额匹配规则
-    AMOUNT_PATTERNS: List[Dict[str, Pattern]] = [
-        {
-            "pattern": re.compile(r'(?:金额|Amount|融资金额)[:：]\s*([A-Z]{3})\s*([0-9,]+(?:\.\d{2})?)'),
-            "weight": 1.0
-        },
-        {
-            "pattern": re.compile(r'([A-Z]{3})\s*([0-9,]+(?:\.\d{2})?)(?:\s*(?:美元|港币|人民币|港元))?'),
-            "weight": 0.9
-        },
-        {
-            "pattern": re.compile(r'([0-9,]+(?:\.\d{2})?)\s*(?:美元|港币|人民币|港元|HKD|USD|CNY|EUR)'),
-            "weight": 0.8
-        },
-        {
-            "pattern": re.compile(r'(?:HK\$\s*|\$\s*|￥\s*|€\s*)([0-9,]+(?:\.\d{2})?)'),
-            "weight": 0.7
-        }
-    ]
+    """解析器配置"""
     
     # 日志配置
-    LOG_LEVEL: LogLevel = LogLevel.INFO
-    LOG_FORMAT: str = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    log_level: LogLevel = LogLevel.INFO
+    log_format: str = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     
     # 性能配置
-    MAX_FILE_SIZE_MB: int = 50
-    TIMEOUT_SECONDS: int = 30
-    CHUNK_SIZE: int = 4096
+    max_file_size_mb: int = 50
+    timeout_seconds: int = 30
+    chunk_size: int = 4096
     
     # 提取配置
-    EXTRACT_TEXT_ONLY: bool = True  # 是否只提取文本
-    REMOVE_HEADER_FOOTER: bool = True  # 是否尝试移除页眉页脚
-    MIN_CONFIDENCE: float = 0.6  # 最低置信度
+    extract_text_only: bool = True
+    remove_header_footer: bool = True
+    min_confidence: float = 0.6
+    
+    # 匹配规则 - 使用 field(default_factory=list) 修复
+    borrower_patterns: List[PatternConfig] = field(default_factory=list)
+    date_patterns: List[PatternConfig] = field(default_factory=list)
+    amount_patterns: List[PatternConfig] = field(default_factory=list)
+    
+    # OCR配置
+    ocr_enabled: bool = False
+    tesseract_path: str = "/usr/bin/tesseract"
+    ocr_languages: List[str] = field(default_factory=lambda: ["chi_sim", "eng"])
+    ocr_dpi: int = 300
+    
+    def __post_init__(self):
+        """后初始化处理"""
+        # 如果没有提供模式，使用默认模式
+        if not self.borrower_patterns:
+            self.borrower_patterns = self._get_default_borrower_patterns()
+        if not self.date_patterns:
+            self.date_patterns = self._get_default_date_patterns()
+        if not self.amount_patterns:
+            self.amount_patterns = self._get_default_amount_patterns()
+    
+    def _get_default_borrower_patterns(self) -> List[PatternConfig]:
+        """获取默认借款人匹配模式"""
+        return [
+            PatternConfig(pattern=r'(?:借款人|Borrower|甲方)[:：]\s*([^\n\r]{1,100})', weight=1.0),
+            PatternConfig(pattern=r'(?:借款人|Borrower|甲方)\s+(.+?)(?=\n|$|，|,)', weight=0.9),
+            PatternConfig(pattern=r'^(.+?)(?:\s+)?(?:作为借款人|as Borrower)', weight=0.8)
+        ]
+    
+    def _get_default_date_patterns(self) -> List[PatternConfig]:
+        """获取默认日期匹配模式"""
+        return [
+            PatternConfig(pattern=r'(?:日期|Date|签订日期)[:：]\s*(\d{4}[-/年]\d{1,2}[-/月]\d{1,2}日?)', weight=1.0),
+            PatternConfig(pattern=r'(?:日期|Date)[:：]\s*(\d{1,2}/\d{1,2}/\d{4})', weight=0.9),
+            PatternConfig(pattern=r'(\d{4}年\d{1,2}月\d{1,2}日)', weight=0.8)
+        ]
+    
+    def _get_default_amount_patterns(self) -> List[PatternConfig]:
+        """获取默认金额匹配模式"""
+        return [
+            PatternConfig(pattern=r'(?:金额|Amount|融资金额)[:：]\s*([A-Z]{3})\s*([0-9,]+(?:\.\d{2})?)', weight=1.0),
+            PatternConfig(pattern=r'([A-Z]{3})\s*([0-9,]+(?:\.\d{2})?)(?:\s*(?:美元|港币|人民币|港元))?', weight=0.9),
+            PatternConfig(pattern=r'([0-9,]+(?:\.\d{2})?)\s*(?:美元|港币|人民币|港元|HKD|USD|CNY|EUR)', weight=0.8)
+        ]
+
+@dataclass
+class MatcherConfig:
+    """匹配器配置"""
+    
+    # 匹配阈值 - 使用 field(default_factory=dict) 修复
+    confidence_thresholds: Dict[str, float] = field(default_factory=lambda: {
+        "exact_match": 0.95,
+        "auto_match": 0.85,
+        "manual_review": 0.70,
+        "no_match": 0.0
+    })
+    
+    # 字段权重
+    field_weights: Dict[str, float] = field(default_factory=lambda: {
+        "name": 0.7,
+        "registration_number": 0.2,
+        "tax_id": 0.1
+    })
+    
+    # 名称匹配配置
+    name_matching: Dict[str, Any] = field(default_factory=lambda: {
+        "min_similarity": 0.8,
+        "remove_common_suffixes": True,
+        "normalize_chinese": True,
+        "ignore_case": True,
+        "use_soundex": False,
+        "use_metaphone": False
+    })
+    
+    # 模糊匹配配置
+    fuzzy_matching: Dict[str, Any] = field(default_factory=lambda: {
+        "enable": True,
+        "max_edit_distance": 3,
+        "use_jaccard": True,
+        "jaccard_threshold": 0.6
+    })
+    
+    # 缓存配置
+    caching: Dict[str, Any] = field(default_factory=lambda: {
+        "enabled": True,
+        "timeout_seconds": 3600
+    })
+    
+    # 性能配置
+    performance: Dict[str, Any] = field(default_factory=lambda: {
+        "max_candidates": 100,
+        "timeout_seconds": 30,
+        "batch_size": 50
+    })
+    
+    # 日志配置
+    logging: Dict[str, Any] = field(default_factory=lambda: {
+        "level": "INFO",
+        "log_matching_details": True,
+        "log_candidates": True
+    })
+
+class ConfigManager:
+    """配置管理器"""
+    
+    _instance = None
+    _configs = {}
+    
+    def __new__(cls):
+        """单例模式"""
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
+    @classmethod
+    def load_parser_config(cls, config_path: Optional[str] = None) -> ParserConfig:
+        """
+        加载解析器配置
+        
+        Args:
+            config_path: 配置文件路径
+            
+        Returns:
+            ParserConfig对象
+        """
+        cache_key = f"parser_{config_path}"
+        
+        if cache_key in cls._configs:
+            return cls._configs[cache_key]
+        
+        config = ParserConfig()
+        
+        if config_path and os.path.exists(config_path):
+            try:
+                yaml_config = cls._load_yaml_config(config_path)
+                config = cls._create_parser_config_from_dict(yaml_config)
+                logger.info(f"从配置文件加载解析器配置: {config_path}")
+            except Exception as e:
+                logger.warning(f"加载解析器配置文件失败: {e}, 使用默认配置")
+        
+        cls._configs[cache_key] = config
+        return config
+    
+    @classmethod
+    def load_matcher_config(cls, config_path: Optional[str] = None) -> MatcherConfig:
+        """
+        加载匹配器配置
+        
+        Args:
+            config_path: 配置文件路径
+            
+        Returns:
+            MatcherConfig对象
+        """
+        cache_key = f"matcher_{config_path}"
+        
+        if cache_key in cls._configs:
+            return cls._configs[cache_key]
+        
+        config = MatcherConfig()
+        
+        if config_path and os.path.exists(config_path):
+            try:
+                yaml_config = cls._load_yaml_config(config_path)
+                config = cls._create_matcher_config_from_dict(yaml_config)
+                logger.info(f"从配置文件加载匹配器配置: {config_path}")
+            except Exception as e:
+                logger.warning(f"加载匹配器配置文件失败: {e}, 使用默认配置")
+        
+        cls._configs[cache_key] = config
+        return config
+    
+    @classmethod
+    def _load_yaml_config(cls, config_path: str) -> Dict[str, Any]:
+        """
+        加载YAML配置文件
+        
+        Args:
+            config_path: 配置文件路径
+            
+        Returns:
+            配置字典
+        """
+        with open(config_path, 'r', encoding='utf-8') as f:
+            return yaml.safe_load(f)
+    
+    @classmethod
+    def _create_parser_config_from_dict(cls, config_dict: Dict[str, Any]) -> ParserConfig:
+        """
+        从字典创建解析器配置
+        
+        Args:
+            config_dict: 配置字典
+            
+        Returns:
+            ParserConfig对象
+        """
+        parser_config = config_dict.get('parser', {})
+        ocr_config = config_dict.get('ocr', {})
+        
+        # 创建模式配置
+        def create_pattern_configs(patterns_dict):
+            configs = []
+            for pattern_dict in patterns_dict:
+                if isinstance(pattern_dict, dict):
+                    configs.append(PatternConfig(
+                        pattern=pattern_dict.get('pattern', ''),
+                        weight=pattern_dict.get('weight', 1.0)
+                    ))
+            return configs
+        
+        # 获取各个字段的模式
+        borrower_patterns = create_pattern_configs(parser_config.get('borrower_name', {}).get('patterns', []))
+        date_patterns = create_pattern_configs(parser_config.get('agreement_date', {}).get('patterns', []))
+        amount_patterns = create_pattern_configs(parser_config.get('facility_amount', {}).get('patterns', []))
+        
+        config = ParserConfig(
+            # 日志配置
+            log_level=LogLevel(parser_config.get('log_level', 'INFO')),
+            log_format=parser_config.get('log_format', '%(asctime)s - %(name)s - %(levelname)s - %(message)s'),
+            
+            # 性能配置
+            max_file_size_mb=parser_config.get('max_file_size_mb', 50),
+            timeout_seconds=parser_config.get('timeout_seconds', 30),
+            chunk_size=parser_config.get('chunk_size', 4096),
+            
+            # 提取配置
+            extract_text_only=parser_config.get('extract_text_only', True),
+            remove_header_footer=parser_config.get('remove_header_footer', True),
+            min_confidence=parser_config.get('min_confidence', 0.6),
+            
+            # 模式配置
+            borrower_patterns=borrower_patterns,
+            date_patterns=date_patterns,
+            amount_patterns=amount_patterns,
+            
+            # OCR配置
+            ocr_enabled=ocr_config.get('enabled', False),
+            tesseract_path=ocr_config.get('tesseract_path', "/usr/bin/tesseract"),
+            ocr_languages=ocr_config.get('languages', ["chi_sim", "eng"]),
+            ocr_dpi=ocr_config.get('dpi', 300)
+        )
+        
+        return config
+    
+    @classmethod
+    def _create_matcher_config_from_dict(cls, config_dict: Dict[str, Any]) -> MatcherConfig:
+        """
+        从字典创建匹配器配置
+        
+        Args:
+            config_dict: 配置字典
+            
+        Returns:
+            MatcherConfig对象
+        """
+        matcher_config = config_dict.get('matcher', {})
+        
+        config = MatcherConfig(
+            # 匹配阈值
+            confidence_thresholds=matcher_config.get('confidence_thresholds', {
+                "exact_match": 0.95,
+                "auto_match": 0.85,
+                "manual_review": 0.70,
+                "no_match": 0.0
+            }),
+            
+            # 字段权重
+            field_weights=matcher_config.get('field_weights', {
+                "name": 0.7,
+                "registration_number": 0.2,
+                "tax_id": 0.1
+            }),
+            
+            # 名称匹配配置
+            name_matching=matcher_config.get('name_matching', {
+                "min_similarity": 0.8,
+                "remove_common_suffixes": True,
+                "normalize_chinese": True,
+                "ignore_case": True,
+                "use_soundex": False,
+                "use_metaphone": False
+            }),
+            
+            # 模糊匹配配置
+            fuzzy_matching=matcher_config.get('fuzzy_matching', {
+                "enable": True,
+                "max_edit_distance": 3,
+                "use_jaccard": True,
+                "jaccard_threshold": 0.6
+            }),
+            
+            # 缓存配置
+            caching=matcher_config.get('caching', {
+                "enabled": True,
+                "timeout_seconds": 3600
+            }),
+            
+            # 性能配置
+            performance=matcher_config.get('performance', {
+                "max_candidates": 100,
+                "timeout_seconds": 30,
+                "batch_size": 50
+            }),
+            
+            # 日志配置
+            logging=matcher_config.get('logging', {
+                "level": "INFO",
+                "log_matching_details": True,
+                "log_candidates": True
+            })
+        )
+        
+        return config
+
+# 默认配置文件路径
+def get_default_config_paths():
+    """
+    获取默认配置文件路径
+    
+    Returns:
+        配置文件路径字典
+    """
+    # 尝试从多个位置查找配置文件
+    possible_paths = {
+        'parser': [
+            os.path.join(os.path.dirname(__file__), '../config/parser_config.yaml'),
+            os.path.join(os.getcwd(), 'config/parser_config.yaml'),
+            os.path.join(os.getcwd(), 'parser_config.yaml'),
+            '/etc/agreement_parser/parser_config.yaml'
+        ],
+        'matcher': [
+            os.path.join(os.path.dirname(__file__), '../config/matcher_config.yaml'),
+            os.path.join(os.getcwd(), 'config/matcher_config.yaml'),
+            os.path.join(os.getcwd(), 'matcher_config.yaml'),
+            '/etc/agreement_parser/matcher_config.yaml'
+        ]
+    }
+    
+    config_paths = {}
+    
+    for config_type, paths in possible_paths.items():
+        for path in paths:
+            if os.path.exists(path):
+                config_paths[config_type] = path
+                break
+        
+        if config_type not in config_paths:
+            logger.warning(f"未找到{config_type}配置文件，将使用默认配置")
+            config_paths[config_type] = None
+    
+    return config_paths
+
+# 方便的函数
+def get_parser_config(config_path: Optional[str] = None) -> ParserConfig:
+    """
+    获取解析器配置
+    
+    Args:
+        config_path: 配置文件路径，如果为None则自动查找
+        
+    Returns:
+        ParserConfig对象
+    """
+    if config_path is None:
+        config_paths = get_default_config_paths()
+        config_path = config_paths.get('parser')
+    
+    return ConfigManager.load_parser_config(config_path)
+
+def get_matcher_config(config_path: Optional[str] = None) -> MatcherConfig:
+    """
+    获取匹配器配置
+    
+    Args:
+        config_path: 配置文件路径，如果为None则自动查找
+        
+    Returns:
+        MatcherConfig对象
+    """
+    if config_path is None:
+        config_paths = get_default_config_paths()
+        config_path = config_paths.get('matcher')
+    
+    return ConfigManager.load_matcher_config(config_path)
