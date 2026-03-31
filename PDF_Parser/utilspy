@@ -1,0 +1,195 @@
+"""
+工具函数
+"""
+
+import re
+from datetime import datetime, date
+from typing import Optional, Tuple, List, Dict, Any
+from decimal import Decimal, InvalidOperation
+import logging
+
+def extract_with_patterns(text: str, patterns: List[Dict]) -> Tuple[Optional[str], float, str]:
+    """
+    使用多个模式提取文本
+    
+    Args:
+        text: 要搜索的文本
+        patterns: 模式列表，每个模式包含pattern和weight
+        
+    Returns:
+        (匹配的文本, 置信度, 模式描述)
+    """
+    best_match = None
+    best_confidence = 0.0
+    best_pattern = ""
+    
+    for pattern_config in patterns:
+        pattern = pattern_config["pattern"]
+        weight = pattern_config["weight"]
+        
+        match = pattern.search(text)
+        if match:
+            # 获取匹配的文本
+            if match.groups():
+                matched_text = match.group(1)
+            else:
+                matched_text = match.group(0)
+            
+            confidence = weight
+            
+            # 如果匹配更好，更新结果
+            if confidence > best_confidence:
+                best_confidence = confidence
+                best_match = matched_text.strip()
+                best_pattern = pattern.pattern[:50]  # 截断模式字符串
+    
+    return best_match, best_confidence, best_pattern
+
+def parse_date_from_text(date_str: str) -> Optional[date]:
+    """
+    从文本解析日期
+    
+    Args:
+        date_str: 日期字符串
+        
+    Returns:
+        日期对象或None
+    """
+    date_str = date_str.strip()
+    
+    # 定义多种日期格式
+    date_formats = [
+        ("%Y-%m-%d", r'\d{4}-\d{1,2}-\d{1,2}'),
+        ("%Y/%m/%d", r'\d{4}/\d{1,2}/\d{1,2}'),
+        ("%Y年%m月%d日", r'\d{4}年\d{1,2}月\d{1,2}日'),
+        ("%d/%m/%Y", r'\d{1,2}/\d{1,2}/\d{4}'),
+        ("%d-%m-%Y", r'\d{1,2}-\d{1,2}-\d{4}'),
+        ("%B %d, %Y", r'[A-Za-z]+ \d{1,2}, \d{4}'),
+        ("%d %B %Y", r'\d{1,2} [A-Za-z]+ \d{4}')
+    ]
+    
+    for fmt, pattern in date_formats:
+        if re.match(f'^{pattern}$', date_str, re.IGNORECASE):
+            try:
+                return datetime.strptime(date_str, fmt).date()
+            except ValueError:
+                continue
+    
+    # 尝试其他格式
+    other_formats = [
+        "%Y.%m.%d",
+        "%d.%m.%Y",
+        "%m/%d/%Y",
+        "%m-%d-%Y"
+    ]
+    
+    for fmt in other_formats:
+        try:
+            return datetime.strptime(date_str, fmt).date()
+        except ValueError:
+            continue
+    
+    return None
+
+def parse_amount_from_text(amount_str: str) -> Optional[Decimal]:
+    """
+    解析金额字符串
+    
+    Args:
+        amount_str: 金额字符串
+        
+    Returns:
+        Decimal金额或None
+    """
+    try:
+        # 移除千分位分隔符和货币符号
+        clean_str = re.sub(r'[^\d.-]', '', amount_str)
+        return Decimal(clean_str)
+    except (InvalidOperation, ValueError):
+        return None
+
+def normalize_text(text: str) -> str:
+    """
+    标准化文本
+    
+    Args:
+        text: 原始文本
+        
+    Returns:
+        标准化后的文本
+    """
+    if not text:
+        return ""
+    
+    # 统一换行符
+    text = text.replace('\r\n', '\n').replace('\r', '\n')
+    
+    # 移除多余空格
+    text = re.sub(r'\s+', ' ', text)
+    
+    # 标准化中文标点
+    text = text.replace('，', ',').replace('。', '.')
+    text = text.replace('：', ':').replace('；', ';')
+    text = text.replace('！', '!').replace('？', '?')
+    text = text.replace('（', '(').replace('）', ')')
+    text = text.replace('【', '[').replace('】', ']')
+    text = text.replace('「', '<').replace('」', '>')
+    
+    return text.strip()
+
+def calculate_confidence(base_score: float, validation_score: float = 1.0, 
+                        position_score: float = 1.0) -> float:
+    """
+    计算综合置信度
+    
+    Args:
+        base_score: 基础分数
+        validation_score: 验证分数
+        position_score: 位置分数
+        
+    Returns:
+        综合置信度
+    """
+    confidence = base_score * validation_score * position_score
+    return max(0.0, min(1.0, confidence))
+
+def safe_float(value: Any) -> Optional[float]:
+    """
+    安全转换为float
+    
+    Args:
+        value: 任意值
+        
+    Returns:
+        float或None
+    """
+    if value is None:
+        return None
+    
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
+
+def safe_decimal(value: Any) -> Optional[Decimal]:
+    """
+    安全转换为Decimal
+    
+    Args:
+        value: 任意值
+        
+    Returns:
+        Decimal或None
+    """
+    if value is None:
+        return None
+    
+    try:
+        if isinstance(value, Decimal):
+            return value
+        elif isinstance(value, (int, float, str)):
+            return Decimal(str(value))
+        else:
+            return None
+    except (InvalidOperation, ValueError, TypeError):
+        return None
