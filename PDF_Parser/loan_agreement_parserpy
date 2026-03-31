@@ -1,0 +1,681 @@
+"""
+信贷协议专用解析器
+"""
+
+import re
+from typing import Dict, Any, Optional, Tuple, List
+from datetime import datetime, date
+from decimal import Decimal, InvalidOperation
+import json
+
+from .pdf_parser import PDFParser
+from .config import ParserConfig
+from .exceptions import FieldExtractionError
+from .utils import (
+    extract_with_patterns,
+    parse_date_from_text,
+    parse_amount_from_text,
+    normalize_text,
+    calculate_confidence
+)
+
+class LoanAgreementParser(PDFParser):
+    """银行信贷协议专用解析器"""
+    
+    def __init__(self, config: Optional[ParserConfig] = None, use_ocr: bool = False):
+        """
+        初始化信贷协议解析器
+        
+        Args:
+            config: 解析器配置
+            use_ocr: 是否使用OCR
+        """
+        super().__init__(config, use_ocr)
+        
+    def parse(self, file_path: str) -> Dict[str, Any]:
+        """
+        解析信贷协议PDF
+        
+        Args:
+            file_path: PDF文件路径
+            
+        Returns:
+            结构化协议数据
+        """
+        self.logger.info(f"开始解析信贷协议: {file_path}")
+        
+        # 基础解析结果
+        base_result = super().parse(file_path)
+        text = base_result["raw_text"]
+        
+        if not text or len(text.strip()) < 10:
+            self.logger.error("提取的文本过短或为空")
+            raise FieldExtractionError("无法从PDF中提取有效文本")
+        
+        # 清理和标准化文本
+        cleaned_text = self._preprocess_text(text)
+        
+        # 提取各个字段
+        result = {
+            **base_result,
+            "borrower_name": None,
+            "borrower_confidence": 0.0,
+            "agreement_date": None,
+            "date_confidence": 0.0,
+            "facility_amount": None,
+            "amount_confidence": 0.0,
+            "currency": "HKD",  # 默认值
+            "currency_confidence": 0.0,
+            "lender_name": None,
+            "interest_rate": None,
+            "term": None,
+            "extraction_details": {},
+            "warnings": []
+        }
+        
+        # 提取借款人名称
+        borrower_result = self._extract_borrower_name(cleaned_text)
+        result.update(borrower_result)
+        
+        # 提取协议日期
+        date_result = self._extract_agreement_date(cleaned_text)
+        result.update(date_result)
+        
+        # 提取融资金额和币种
+        amount_result = self._extract_facility_amount(cleaned_text)
+        result.update(amount_result)
+        
+        # 提取其他可选字段
+        optional_result = self._extract_optional_fields(cleaned_text)
+        result.update(optional_result)
+        
+        # 计算总体置信度
+        result["overall_confidence"] = self._calculate_overall_confidence(result)
+        
+        # 记录结果
+        self._log_extraction_summary(result)
+        
+        return result
+    
+    def _preprocess_text(self, text: str) -> str:
+        """
+        预处理文本
+        
+        Args:
+            text: 原始文本
+            
+        Returns:
+            预处理后的文本
+        """
+        # 统一换行符
+        text = text.replace('\r\n', '\n').replace('\r', '\n')
+        
+        # 移除多余空格，但保留必要的空格
+        lines = text.split('\n')
+        cleaned_lines = []
+        
+        for line in lines:
+            line = line.strip()
+            if line:  # 跳过空行
+                # 移除页码（如"1/10"）
+                if not re.match(r'^\d+/\d+$', line):
+                    # 合并被错误分割的单词
+                    line = re.sub(r'(\w)-\s*\n\s*(\w)', r'\1\2', line)
+                    cleaned_lines.append(line)
+        
+        return '\n'.join(cleaned_lines)
+    
+    def _extract_borrower_name(self, text: str) -> Dict[str, Any]:
+        """
+        提取借款人名称
+        
+        Args:
+            text: 清理后的文本
+            
+        Returns:
+            借款人信息
+        """
+        self.logger.info("开始提取借款人名称")
+        
+        result = {
+            "borrower_name": None,
+            "borrower_confidence": 0.0,
+            "borrower_source": None
+        }
+        
+        best_match = None
+        best_confidence = 0.0
+        
+        for pattern_config in self.config.BORROWER_PATTERNS:
+            pattern = pattern_config["pattern"]
+            weight = pattern_config["weight"]
+            
+            matches = list(pattern.finditer(text))
+            
+            for match in matches:
+                candidate = match.group(1).strip()
+                confidence = weight
+                
+                # 清理候选文本
+                candidate = self._clean_borrower_name(candidate)
+                
+                # 验证借款人名称
+                if self._validate_borrower_name(candidate):
+                    # 计算置信度调整因子
+                    validation_score = self._calculate_borrower_validation_score(candidate)
+                    confidence *= validation_score
+                    
+                    if confidence > best_confidence:
+                        best_confidence = confidence
+                        best_match = candidate
+                        result["borrower_source"] = f"pattern: {pattern.pattern[:50]}..."
+        
+        if best_match and best_confidence >= self.config.MIN_CONFIDENCE:
+            result["borrower_name"] = best_match
+            result["borrower_confidence"] = best_confidence
+            self.log_extraction_result("borrower_name", best_match, best_confidence)
+        else:
+            self.logger.warning("未能提取到有效的借款人名称")
+            result["warnings"] = result.get("warnings", []) + ["未能提取借款人名称"]
+        
+        return result
+    
+    def _clean_borrower_name(self, name: str) -> str:
+        """
+        清理借款人名称
+        
+        Args:
+            name: 原始名称
+            
+        Returns:
+            清理后的名称
+        """
+        # 移除常见后缀
+        suffixes = ["有限公司", "有限责任公司", "股份有限公司", "集团", 
+                   "Limited", "Ltd.", "Ltd", "Incorporated", "Inc.",
+                   "Company", "Co.", "Co", "Corporation", "Corp."]
+        
+        cleaned = name.strip()
+        
+        # 移除尾部的标点
+        cleaned = re.sub(r'[，,。.;:：\s]+$', '', cleaned)
+        
+        # 移除已知后缀
+        for suffix in suffixes:
+            if cleaned.endswith(suffix):
+                cleaned = cleaned[:-len(suffix)].rstrip()
+        
+        return cleaned
+    
+    def _validate_borrower_name(self, name: str) -> bool:
+        """
+        验证借款人名称是否有效
+        
+        Args:
+            name: 借款人名称
+            
+        Returns:
+            是否有效
+        """
+        if not name or len(name) < 2:
+            return False
+        
+        # 不应是纯数字
+        if name.isdigit():
+            return False
+        
+        # 不应包含明显无效的字符
+        invalid_patterns = [
+            r'^[\d\s\W]+$',  # 全是数字、空格或符号
+            r'借款人$',  # 只是"借款人"
+            r'Borrower$',  # 只是"Borrower"
+        ]
+        
+        for pattern in invalid_patterns:
+            if re.match(pattern, name, re.IGNORECASE):
+                return False
+        
+        return True
+    
+    def _calculate_borrower_validation_score(self, name: str) -> float:
+        """
+        计算借款人名称验证分数
+        
+        Args:
+            name: 借款人名称
+            
+        Returns:
+            验证分数 (0-1)
+        """
+        score = 1.0
+        
+        # 长度检查
+        if len(name) < 4:
+            score *= 0.7
+        elif len(name) > 100:
+            score *= 0.8
+        
+        # 检查是否包含公司标识
+        company_indicators = ["公司", "有限", "集团", "Ltd", "Inc", "Co"]
+        has_company_indicator = any(indicator in name for indicator in company_indicators)
+        if has_company_indicator:
+            score *= 1.1  # 轻微加分
+        else:
+            score *= 0.9  # 轻微减分
+        
+        return min(score, 1.0)
+    
+    def _extract_agreement_date(self, text: str) -> Dict[str, Any]:
+        """
+        提取协议日期
+        
+        Args:
+            text: 清理后的文本
+            
+        Returns:
+            日期信息
+        """
+        self.logger.info("开始提取协议日期")
+        
+        result = {
+            "agreement_date": None,
+            "date_confidence": 0.0,
+            "date_source": None
+        }
+        
+        best_match = None
+        best_confidence = 0.0
+        
+        for pattern_config in self.config.DATE_PATTERNS:
+            pattern = pattern_config["pattern"]
+            weight = pattern_config["weight"]
+            
+            matches = list(pattern.finditer(text))
+            
+            for match in matches:
+                date_str = match.group(0) if match.groups() == 0 else match.group(1)
+                confidence = weight
+                
+                # 尝试解析日期
+                parsed_date = parse_date_from_text(date_str)
+                
+                if parsed_date:
+                    # 日期有效性检查
+                    if self._validate_date(parsed_date):
+                        # 计算置信度调整
+                        validation_score = self._calculate_date_validation_score(parsed_date)
+                        confidence *= validation_score
+                        
+                        if confidence > best_confidence:
+                            best_confidence = confidence
+                            best_match = parsed_date
+                            result["date_source"] = f"pattern: {pattern.pattern[:50]}..."
+        
+        if best_match and best_confidence >= self.config.MIN_CONFIDENCE:
+            result["agreement_date"] = best_match
+            result["date_confidence"] = best_confidence
+            self.log_extraction_result("agreement_date", best_match, best_confidence)
+        else:
+            self.logger.warning("未能提取到有效的协议日期")
+            result["warnings"] = result.get("warnings", []) + ["未能提取协议日期"]
+        
+        return result
+    
+    def _validate_date(self, date_obj: date) -> bool:
+        """
+        验证日期是否合理
+        
+        Args:
+            date_obj: 日期对象
+            
+        Returns:
+            是否合理
+        """
+        # 检查年份是否在合理范围内
+        current_year = datetime.now().year
+        
+        if date_obj.year < 2000 or date_obj.year > current_year + 5:
+            return False
+        
+        # 检查日期是否在未来（允许最多未来5年）
+        from datetime import date as date_type
+        today = date_type.today()
+        max_future = date_type(today.year + 5, today.month, today.day)
+        
+        if date_obj > max_future:
+            return False
+        
+        return True
+    
+    def _calculate_date_validation_score(self, date_obj: date) -> float:
+        """
+        计算日期验证分数
+        
+        Args:
+            date_obj: 日期对象
+            
+        Returns:
+            验证分数
+        """
+        score = 1.0
+        
+        # 检查是否在合理的时间范围内
+        current_year = datetime.now().year
+        
+        if date_obj.year < 2010:
+            score *= 0.7
+        elif date_obj.year > current_year + 1:
+            score *= 0.8
+        
+        return score
+    
+    def _extract_facility_amount(self, text: str) -> Dict[str, Any]:
+        """
+        提取融资金额和币种
+        
+        Args:
+            text: 清理后的文本
+            
+        Returns:
+            金额和币种信息
+        """
+        self.logger.info("开始提取融资金额和币种")
+        
+        result = {
+            "facility_amount": None,
+            "amount_confidence": 0.0,
+            "currency": "HKD",
+            "currency_confidence": 0.0,
+            "amount_source": None
+        }
+        
+        best_amount = None
+        best_currency = "HKD"
+        best_confidence = 0.0
+        
+        for pattern_config in self.config.AMOUNT_PATTERNS:
+            pattern = pattern_config["pattern"]
+            weight = pattern_config["weight"]
+            
+            matches = list(pattern.finditer(text))
+            
+            for match in matches:
+                groups = match.groups()
+                confidence = weight
+                
+                if len(groups) >= 2:
+                    # 格式: 币种 金额
+                    currency_candidate = groups[0].upper() if len(groups[0]) == 3 else "HKD"
+                    amount_str = groups[1]
+                elif len(groups) == 1:
+                    # 格式: 金额
+                    amount_str = groups[0]
+                    currency_candidate = self._infer_currency_from_context(text, match.start())
+                else:
+                    continue
+                
+                # 清理金额字符串
+                amount_str = amount_str.replace(',', '')
+                
+                try:
+                    # 解析金额
+                    amount = Decimal(amount_str)
+                    
+                    # 验证金额
+                    if self._validate_amount(amount, currency_candidate):
+                        # 计算置信度调整
+                        validation_score = self._calculate_amount_validation_score(amount, currency_candidate)
+                        confidence *= validation_score
+                        
+                        if confidence > best_confidence:
+                            best_confidence = confidence
+                            best_amount = amount
+                            best_currency = currency_candidate
+                            result["amount_source"] = f"pattern: {pattern.pattern[:50]}..."
+                
+                except (InvalidOperation, ValueError) as e:
+                    self.logger.debug(f"金额解析失败: {amount_str}, 错误: {e}")
+                    continue
+        
+        if best_amount and best_confidence >= self.config.MIN_CONFIDENCE:
+            result["facility_amount"] = float(best_amount)  # 转换为float便于JSON序列化
+            result["amount_confidence"] = best_confidence
+            result["currency"] = best_currency
+            result["currency_confidence"] = best_confidence * 0.9  # 币种置信度略低
+            
+            self.log_extraction_result(
+                "facility_amount", 
+                f"{best_amount} {best_currency}", 
+                best_confidence
+            )
+        else:
+            self.logger.warning("未能提取到有效的融资金额")
+            result["warnings"] = result.get("warnings", []) + ["未能提取融资金额"]
+        
+        return result
+    
+    def _infer_currency_from_context(self, text: str, position: int) -> str:
+        """
+        从上下文推断币种
+        
+        Args:
+            text: 完整文本
+            position: 匹配位置
+            
+        Returns:
+            推断的币种
+        """
+        # 在匹配位置前后查找币种关键词
+        context_start = max(0, position - 100)
+        context_end = min(len(text), position + 100)
+        context = text[context_start:context_end]
+        
+        currency_keywords = {
+            "HKD": ["HKD", "港币", "港元", "HK$", "HK $"],
+            "USD": ["USD", "美元", "US$", "US $", "$"],
+            "CNY": ["CNY", "人民币", "元", "￥", "RMB"],
+            "EUR": ["EUR", "欧元", "€"]
+        }
+        
+        for currency, keywords in currency_keywords.items():
+            for keyword in keywords:
+                if keyword in context:
+                    return currency
+        
+        return "HKD"  # 默认值
+    
+    def _validate_amount(self, amount: Decimal, currency: str) -> bool:
+        """
+        验证金额是否合理
+        
+        Args:
+            amount: 金额
+            currency: 币种
+            
+        Returns:
+            是否合理
+        """
+        # 金额必须为正数
+        if amount <= 0:
+            return False
+        
+        # 根据币种设置合理范围
+        currency_ranges = {
+            "HKD": (1000, Decimal('1000000000000')),  # 1千到1万亿
+            "USD": (1000, Decimal('1000000000000')),
+            "CNY": (1000, Decimal('1000000000000')),
+            "EUR": (1000, Decimal('1000000000000'))
+        }
+        
+        min_amount, max_amount = currency_ranges.get(currency, (1000, Decimal('1000000000000')))
+        
+        return min_amount <= amount <= max_amount
+    
+    def _calculate_amount_validation_score(self, amount: Decimal, currency: str) -> float:
+        """
+        计算金额验证分数
+        
+        Args:
+            amount: 金额
+            currency: 币种
+            
+        Returns:
+            验证分数
+        """
+        score = 1.0
+        
+        # 检查金额是否常见（通常是整数或.00结尾）
+        if amount == amount.to_integral_value():
+            score *= 1.05  # 整数金额轻微加分
+        
+        # 检查是否是常见金额
+        common_amounts = [
+            Decimal('1000000'), Decimal('5000000'), Decimal('10000000'),
+            Decimal('50000000'), Decimal('100000000'), Decimal('500000000'),
+            Decimal('1000000000')
+        ]
+        
+        for common_amount in common_amounts:
+            if amount == common_amount:
+                score *= 1.1  # 常见金额加分
+                break
+        
+        return min(score, 1.0)
+    
+    def _extract_optional_fields(self, text: str) -> Dict[str, Any]:
+        """
+        提取其他可选字段
+        
+        Args:
+            text: 清理后的文本
+            
+        Returns:
+            可选字段信息
+        """
+        result = {
+            "lender_name": None,
+            "interest_rate": None,
+            "term": None
+        }
+        
+        # 提取贷款人
+        lender_patterns = [
+            re.compile(r'(?:贷款人|Lender|乙方)[:：]\s*([^\n\r]{1,100})', re.IGNORECASE),
+            re.compile(r'(?:贷款人|Lender|乙方)\s+(.+?)(?=\n|$|，|,)', re.IGNORECASE)
+        ]
+        
+        for pattern in lender_patterns:
+            match = pattern.search(text)
+            if match:
+                lender_name = match.group(1).strip()
+                if self._validate_borrower_name(lender_name):  # 复用借款人验证逻辑
+                    result["lender_name"] = lender_name
+                    self.logger.info(f"提取到贷款人: {lender_name}")
+                break
+        
+        # 提取利率
+        interest_patterns = [
+            re.compile(r'(?:利率|interest rate)[:：]\s*([\d.]+)\s*%', re.IGNORECASE),
+            re.compile(r'([\d.]+)\s*%\s*(?:per annum|p\.a\.|年利率)', re.IGNORECASE)
+        ]
+        
+        for pattern in interest_patterns:
+            match = pattern.search(text)
+            if match:
+                try:
+                    interest_rate = float(match.group(1))
+                    if 0 < interest_rate < 50:  # 合理利率范围
+                        result["interest_rate"] = interest_rate
+                        self.logger.info(f"提取到利率: {interest_rate}%")
+                except ValueError:
+                    continue
+                break
+        
+        # 提取期限
+        term_patterns = [
+            re.compile(r'(?:期限|term)[:：]\s*(\d+)\s*(?:个月|月|月s|months?)', re.IGNORECASE),
+            re.compile(r'(\d+)\s*(?:个月|月|个月|月s|months?)(?:\s*期限)?', re.IGNORECASE)
+        ]
+        
+        for pattern in term_patterns:
+            match = pattern.search(text)
+            if match:
+                try:
+                    term = int(match.group(1))
+                    if 1 <= term <= 360:  # 合理期限范围
+                        result["term"] = term
+                        self.logger.info(f"提取到期限: {term}个月")
+                except ValueError:
+                    continue
+                break
+        
+        return result
+    
+    def _calculate_overall_confidence(self, result: Dict[str, Any]) -> float:
+        """
+        计算总体置信度
+        
+        Args:
+            result: 解析结果
+            
+        Returns:
+            总体置信度
+        """
+        confidences = []
+        weights = {
+            "borrower_confidence": 0.3,
+            "date_confidence": 0.3,
+            "amount_confidence": 0.4
+        }
+        
+        for field, weight in weights.items():
+            confidence = result.get(field, 0.0)
+            confidences.append(confidence * weight)
+        
+        overall = sum(confidences) / sum(weights.values()) if confidences else 0.0
+        
+        # 根据警告数量调整
+        warnings = result.get("warnings", [])
+        if warnings:
+            overall *= max(0.5, 1.0 - len(warnings) * 0.1)
+        
+        return round(overall, 3)
+    
+    def _log_extraction_summary(self, result: Dict[str, Any]):
+        """
+        记录提取结果摘要
+        
+        Args:
+            result: 解析结果
+        """
+        self.logger.info("=" * 50)
+        self.logger.info("信贷协议解析结果摘要")
+        self.logger.info("=" * 50)
+        
+        if result["borrower_name"]:
+            self.logger.info(f"借款人: {result['borrower_name']} (置信度: {result['borrower_confidence']:.3f})")
+        
+        if result["agreement_date"]:
+            self.logger.info(f"协议日期: {result['agreement_date']} (置信度: {result['date_confidence']:.3f})")
+        
+        if result["facility_amount"]:
+            self.logger.info(f"融资金额: {result['facility_amount']} {result['currency']} (置信度: {result['amount_confidence']:.3f})")
+        
+        if result["lender_name"]:
+            self.logger.info(f"贷款人: {result['lender_name']}")
+        
+        if result["interest_rate"]:
+            self.logger.info(f"利率: {result['interest_rate']}%")
+        
+        if result["term"]:
+            self.logger.info(f"期限: {result['term']}个月")
+        
+        self.logger.info(f"总体置信度: {result.get('overall_confidence', 0.0):.3f}")
+        
+        warnings = result.get("warnings", [])
+        if warnings:
+            self.logger.warning(f"警告: {len(warnings)} 个")
+            for warning in warnings:
+                self.logger.warning(f"  - {warning}")
+        
+        self.logger.info("=" * 50)
