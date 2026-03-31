@@ -1,0 +1,246 @@
+"""
+专门测试增强版解析器
+"""
+
+import os
+import tempfile
+import unittest
+from datetime import date
+from decimal import Decimal
+from unittest.mock import Mock, patch
+
+from django.test import TestCase
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+
+from agreement_parser.enhanced_loan_parser import EnhancedLoanAgreementParser
+from agreement_parser.config import ParserConfig
+
+
+class TestEnhancedLoanAgreementParser(TestCase):
+    """测试增强版信贷协议解析器"""
+    
+    def setUp(self):
+        """测试设置"""
+        self.parser = EnhancedLoanAgreementParser()
+        
+    def create_test_pdf(self, content_lines=None):
+        """创建测试PDF的辅助函数"""
+        if content_lines is None:
+            content_lines = [
+                "FACILITY AGREEMENT",
+                "",
+                "PARTIES:",
+                "ABC科技有限公司, DEF集团有限公司 as borrower,",
+                "XYZ银行 as facility agent,",
+                "GHI控股 as guarantor.",
+                "",
+                "Date: 2023-12-31",
+                "",
+                "Facility Amount: HKD 500,000,000.00",
+            ]
+        
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_file:
+            c = canvas.Canvas(tmp_file.name, pagesize=letter)
+            y = 750
+            
+            c.setFont("Helvetica", 12)
+            for line in content_lines:
+                c.drawString(100, y, line)
+                y -= 20
+                
+            c.save()
+            return tmp_file.name
+    
+    def test_parse_realistic_agreement(self):
+        """测试解析真实信贷协议"""
+        pdf_path = self.create_test_pdf()
+        
+        try:
+            result = self.parser.parse(pdf_path)
+            
+            # 检查增强版特有字段
+            self.assertIn("agreement_type", result)
+            self.assertEqual(result["agreement_type"], "facility_agreement")
+            
+            self.assertIn("borrowers", result)
+            borrowers = result["borrowers"]
+            self.assertGreater(len(borrowers), 0)
+            
+            self.assertIn("primary_borrower", result)
+            self.assertIsNotNone(result["primary_borrower"])
+            
+            self.assertIn("facility_amount", result)
+            self.assertEqual(result["facility_amount"], 500000000.0)
+            self.assertEqual(result["currency"], "HKD")
+            
+            self.assertIn("agreement_date", result)
+            self.assertEqual(str(result["agreement_date"]), "2023-12-31")
+            
+            print(f"✅ 解析成功:")
+            print(f"   协议类型: {result['agreement_type']}")
+            print(f"   所有借款人: {result['borrowers']}")
+            print(f"   主借款人: {result['primary_borrower']}")
+            print(f"   金额: {result['facility_amount']} {result['currency']}")
+            print(f"   日期: {result['agreement_date']}")
+            print(f"   置信度: {result.get('overall_confidence', 0)}")
+            
+        finally:
+            os.unlink(pdf_path)
+    
+    def test_extract_multiple_borrowers(self):
+        """测试提取多个借款人"""
+        test_text = """
+        PARTIES:
+        Company A Limited, Company B Inc. as borrower,
+        Company C Ltd. as co-borrower,
+        Bank XYZ as facility agent.
+        """
+        
+        result = self.parser._extract_parties_enhanced(test_text)
+        
+        self.assertIn("borrowers", result)
+        borrowers = result["borrowers"]
+        
+        # 应该提取到2个借款人
+        self.assertGreaterEqual(len(borrowers), 1)
+        
+        # 检查清理后的名称
+        for borrower in borrowers:
+            self.assertNotIn("as borrower", borrower.lower())
+            self.assertNotIn("as co-borrower", borrower.lower())
+    
+    def test_extract_large_amounts_only(self):
+        """测试只提取大金额"""
+        test_text = """
+        Some small amounts: USD 1,000.00, HKD 5,000.00
+        Facility Amount: HKD 500,000,000.00
+        Another large amount: USD 100,000,000.00
+        """
+        
+        result = self.parser._extract_facility_amount_enhanced(test_text)
+        
+        # 应该提取到大金额 HKD 500,000,000.00
+        self.assertIsNotNone(result.get("facility_amount"))
+        self.assertEqual(result["facility_amount"], 500000000.0)
+        self.assertEqual(result["currency"], "HKD")
+    
+    def test_agreement_type_detection(self):
+        """测试协议类型检测"""
+        test_cases = [
+            ("FACILITY AGREEMENT", "facility_agreement"),
+            ("CREDIT AGREEMENT", "credit_agreement"),
+            ("LOAN AGREEMENT", "loan_agreement"),
+            ("SOME OTHER DOCUMENT", "unknown"),
+        ]
+        
+        for text, expected_type in test_cases:
+            detected = self.parser._identify_agreement_type(text)
+            self.assertEqual(detected, expected_type, 
+                           f"文本 '{text[:20]}...' 应该识别为 {expected_type}")
+    
+    def test_normalize_currency(self):
+        """测试货币标准化"""
+        test_cases = [
+            ("HKD", "HKD"),
+            ("USD", "USD"),
+            ("HK$", "HKD"),
+            ("美元", "USD"),
+            ("人民币", "CNY"),
+            ("港币", "HKD"),
+            ("UNKNOWN", "UNKNOWN"),
+        ]
+        
+        for input_currency, expected in test_cases:
+            normalized = self.parser._normalize_currency(input_currency)
+            self.assertEqual(normalized, expected)
+    
+    def test_clean_company_name(self):
+        """测试清理公司名称"""
+        test_cases = [
+            ("ABC Co., Ltd. as borrower", "ABC Co."),
+            ("XYZ Bank Limited as facility agent", "XYZ Bank"),
+            ("GHI Holdings plc as guarantor", "GHI Holdings"),
+            ("北京科技有限公司", "北京科技"),
+        ]
+        
+        for input_name, expected_prefix in test_cases:
+            cleaned = self.parser._clean_company_name(input_name)
+            # 检查是否移除了法律实体后缀
+            self.assertNotIn("Ltd.", cleaned)
+            self.assertNotIn("Limited", cleaned)
+            self.assertNotIn("plc", cleaned)
+            self.assertNotIn("as borrower", cleaned.lower())
+            
+            # 检查是否以期望的前缀开头
+            self.assertTrue(cleaned.startswith(expected_prefix),
+                          f"'{cleaned}' 应该以 '{expected_prefix}' 开头")
+    
+    def test_parse_with_different_formats(self):
+        """测试不同格式的协议"""
+        test_cases = [
+            {
+                "name": "标准格式",
+                "content": [
+                    "FACILITY AGREEMENT",
+                    "Borrower: ABC Company Limited",
+                    "Date: 2024-01-15",
+                    "Amount: USD 50,000,000.00"
+                ],
+                "expected_borrowers": ["ABC Company"]
+            },
+            {
+                "name": "多借款人格式",
+                "content": [
+                    "CREDIT AGREEMENT",
+                    "Borrowers: Company A, Company B as borrower,",
+                    "Company C as co-borrower",
+                    "Date: January 15, 2024",
+                    "Facility Amount: HKD 200,000,000.00"
+                ],
+                "expected_borrower_count": 2
+            },
+            {
+                "name": "表格格式",
+                "content": [
+                    "LOAN AGREEMENT - KEY TERMS",
+                    "Borrower    : XYZ Corporation",
+                    "Date        : 15/01/2024",
+                    "Amount      : EUR 75,000,000.00"
+                ],
+                "expected_borrowers": ["XYZ Corporation"]
+            }
+        ]
+        
+        for test_case in test_cases:
+            with self.subTest(test_case["name"]):
+                pdf_path = self.create_test_pdf(test_case["content"])
+                
+                try:
+                    result = self.parser.parse(pdf_path)
+                    
+                    # 检查基本字段
+                    self.assertIsNotNone(result.get("primary_borrower"))
+                    self.assertIsNotNone(result.get("agreement_date"))
+                    self.assertIsNotNone(result.get("facility_amount"))
+                    
+                    # 检查特定预期
+                    if "expected_borrowers" in test_case:
+                        for expected in test_case["expected_borrowers"]:
+                            self.assertTrue(
+                                any(expected in b for b in result.get("borrowers", [])),
+                                f"应该包含借款人: {expected}"
+                            )
+                    
+                    if "expected_borrower_count" in test_case:
+                        self.assertGreaterEqual(
+                            len(result.get("borrowers", [])),
+                            test_case["expected_borrower_count"]
+                        )
+                    
+                finally:
+                    os.unlink(pdf_path)
+
+
+if __name__ == '__main__':
+    unittest.main()
