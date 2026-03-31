@@ -1,0 +1,200 @@
+"""
+PDF解析器实现
+"""
+
+import io
+import time
+import PyPDF2
+from typing import Dict, Any, Optional, List, Tuple
+from datetime import datetime
+from decimal import Decimal, InvalidOperation
+import re
+import pytesseract
+from PIL import Image
+
+from .base_parser import BaseParser
+from .exceptions import PDFExtractionError, ParserError, ParserTimeoutError
+from .config import ParserConfig
+from .utils import (
+    extract_with_patterns,
+    parse_date_from_text,
+    parse_amount_from_text,
+    normalize_text
+)
+
+class PDFParser(BaseParser):
+    """PDF文本提取和基础解析器"""
+    
+    def __init__(self, config: Optional[ParserConfig] = None, use_ocr: bool = False):
+        """
+        初始化PDF解析器
+        
+        Args:
+            config: 解析器配置
+            use_ocr: 是否使用OCR处理扫描件
+        """
+        super().__init__(config)
+        self.use_ocr = use_ocr
+        self.ocr_engine = None
+        
+        if use_ocr:
+            self._setup_ocr_engine()
+    
+    def _setup_ocr_engine(self):
+        """设置OCR引擎"""
+        try:
+            # 检查tesseract是否可用
+            pytesseract.get_tesseract_version()
+            self.ocr_engine = pytesseract
+            self.logger.info("OCR引擎初始化成功")
+        except Exception as e:
+            self.logger.warning(f"OCR引擎初始化失败: {e}. 将回退到纯文本提取")
+            self.use_ocr = False
+    
+    def extract_text(self, file_path: str) -> str:
+        """
+        从PDF中提取文本
+        
+        Args:
+            file_path: PDF文件路径
+            
+        Returns:
+            提取的文本内容
+        """
+        self.validate_file(file_path)
+        self.logger.info(f"开始提取PDF文本: {file_path}")
+        
+        start_time = time.time()
+        extracted_text = ""
+        
+        try:
+            with open(file_path, 'rb') as file:
+                pdf_reader = PyPDF2.PdfReader(file)
+                
+                if len(pdf_reader.pages) == 0:
+                    raise PDFExtractionError("PDF文件没有页面")
+                
+                self.logger.info(f"PDF页数: {len(pdf_reader.pages)}")
+                
+                for page_num, page in enumerate(pdf_reader.pages, 1):
+                    # 超时控制
+                    if time.time() - start_time > self.config.TIMEOUT_SECONDS:
+                        raise ParserTimeoutError(f"PDF提取超时 ({self.config.TIMEOUT_SECONDS}秒)")
+                    
+                    page_text = page.extract_text()
+                    
+                    if page_text and page_text.strip():
+                        extracted_text += page_text + "\n"
+                    elif self.use_ocr and self.ocr_engine:
+                        # 尝试OCR提取
+                        self.logger.debug(f"第{page_num}页文本为空，尝试OCR...")
+                        ocr_text = self._extract_text_with_ocr(page, page_num)
+                        extracted_text += ocr_text + "\n"
+                    else:
+                        self.logger.warning(f"第{page_num}页文本为空")
+                
+                # 清理文本
+                extracted_text = self.clean_text(extracted_text)
+                self.extracted_text = extracted_text
+                
+                elapsed_time = time.time() - start_time
+                self.logger.info(f"PDF文本提取完成，耗时: {elapsed_time:.2f}秒")
+                self.logger.debug(f"提取文本长度: {len(extracted_text)} 字符")
+                
+                return extracted_text
+                
+        except PyPDF2.errors.PdfReadError as e:
+            self.logger.error(f"PDF读取错误: {e}")
+            raise PDFExtractionError(f"PDF读取失败: {str(e)}")
+        except Exception as e:
+            self.logger.error(f"PDF提取失败: {e}", exc_info=True)
+            raise PDFExtractionError(f"PDF提取失败: {str(e)}")
+    
+    def _extract_text_with_ocr(self, page, page_num: int) -> str:
+        """
+        使用OCR提取文本
+        
+        Args:
+            page: PDF页面对象
+            page_num: 页码
+            
+        Returns:
+            OCR提取的文本
+        """
+        try:
+            # 将PDF页面转换为图片
+            from pdf2image import convert_from_bytes
+            import tempfile
+            
+            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_pdf:
+                # 创建单页PDF
+                pdf_writer = PyPDF2.PdfWriter()
+                pdf_writer.add_page(page)
+                pdf_writer.write(tmp_pdf)
+                tmp_pdf.flush()
+                
+                # 转换为图片
+                images = convert_from_bytes(open(tmp_pdf.name, 'rb').read(), dpi=300)
+                
+                if images:
+                    # OCR识别
+                    text = self.ocr_engine.image_to_string(images[0], lang='chi_sim+eng')
+                    self.logger.info(f"第{page_num}页OCR提取成功")
+                    return text
+            
+            return ""
+            
+        except Exception as e:
+            self.logger.warning(f"第{page_num}页OCR提取失败: {e}")
+            return ""
+    
+    def parse(self, file_path: str) -> Dict[str, Any]:
+        """
+        基础PDF解析
+        
+        Args:
+            file_path: PDF文件路径
+            
+        Returns:
+            基础解析结果
+        """
+        self.logger.info(f"开始解析PDF: {file_path}")
+        
+        result = {
+            "file_path": file_path,
+            "extraction_time": None,
+            "page_count": 0,
+            "text_length": 0,
+            "raw_text": "",
+            "metadata": {}
+        }
+        
+        try:
+            # 提取文本
+            raw_text = self.extract_text(file_path)
+            result["raw_text"] = raw_text
+            result["text_length"] = len(raw_text)
+            
+            # 获取PDF元数据
+            with open(file_path, 'rb') as file:
+                pdf_reader = PyPDF2.PdfReader(file)
+                result["page_count"] = len(pdf_reader.pages)
+                
+                if pdf_reader.metadata:
+                    result["metadata"] = {
+                        "title": pdf_reader.metadata.get("/Title", ""),
+                        "author": pdf_reader.metadata.get("/Author", ""),
+                        "creator": pdf_reader.metadata.get("/Creator", ""),
+                        "producer": pdf_reader.metadata.get("/Producer", ""),
+                        "creation_date": pdf_reader.metadata.get("/CreationDate", ""),
+                        "modification_date": pdf_reader.metadata.get("/ModDate", "")
+                    }
+            
+            result["extraction_time"] = datetime.now()
+            self.logger.info(f"PDF解析完成: {file_path}")
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"PDF解析失败: {e}", exc_info=True)
+            raise ParserError(f"PDF解析失败: {str(e)}")
