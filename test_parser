@@ -1,0 +1,52 @@
+import sys
+import os
+import django
+
+# 设置Django环境
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'your_project.settings')
+django.setup()
+
+from agreements.parsers.loan_agreement_parser import LoanAgreementParser
+
+def test_parser():
+    """测试解析器是否正常工作"""
+    print("=== 测试PDF解析器 ===")
+    
+    # 创建解析器实例
+    parser = LoanAgreementParser()
+    
+    # 用一个小样本PDF测试
+    # 如果没有测试PDF，可以先用文本测试
+    test_pdf_path = "test.pdf"  # 替换为你的测试PDF路径
+    
+    if os.path.exists(test_pdf_path):
+        print(f"正在解析: {test_pdf_path}")
+        
+        try:
+            # 尝试解析
+            result = parser.parse(test_pdf_path)
+            
+            print("✅ 解析成功！")
+            print(f"提取结果:")
+            print(f"  借款人: {result.get('borrower_name')}")
+            print(f"  协议日期: {result.get('agreement_date')}")
+            print(f"  金额: {result.get('facility_amount')}")
+            print(f"  币种: {result.get('currency')}")
+            print(f"  文本长度: {len(result.get('parsed_text', ''))} 字符")
+            
+        except Exception as e:
+            print(f"❌ 解析失败: {str(e)}")
+            import traceback
+            traceback.print_exc()
+    else:
+        print(f"⚠️ 测试PDF不存在: {test_pdf_path}")
+        print("请准备一个测试PDF文件")
+        
+        # 测试解析器是否能被正确导入
+        print("\n=== 导入测试 ===")
+        print(f"解析器类: {LoanAgreementParser}")
+        print("✅ 解析器模块导入成功")
+
+if __name__ == "__main__":
+    test_parser()
