@@ -146,10 +146,13 @@ class LoanAgreementParser(PDFParser):
         best_match = None
         best_confidence = 0.0
         
-        for pattern_config in self.config.BORROWER_PATTERNS:
-            pattern = pattern_config["pattern"]
-            weight = pattern_config["weight"]
+        for pattern_config in self.config.borrower_patterns:
+            pattern = pattern_config.compiled_pattern
+            weight = pattern_config.weight
             
+            if pattern is None:
+                continue  # 跳过编译失败的模式
+                
             matches = list(pattern.finditer(text))
             
             for match in matches:
