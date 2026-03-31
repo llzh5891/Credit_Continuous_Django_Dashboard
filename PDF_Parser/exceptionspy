@@ -1,0 +1,27 @@
+"""
+自定义异常类
+"""
+
+class ParserError(Exception):
+    """解析器基础异常"""
+    pass
+
+class PDFExtractionError(ParserError):
+    """PDF提取异常"""
+    pass
+
+class ParserTimeoutError(ParserError):
+    """解析超时异常"""
+    pass
+
+class FieldExtractionError(ParserError):
+    """字段提取异常"""
+    pass
+
+class ValidationError(ParserError):
+    """验证异常"""
+    pass
+
+class ConfigurationError(ParserError):
+    """配置异常"""
+    pass
