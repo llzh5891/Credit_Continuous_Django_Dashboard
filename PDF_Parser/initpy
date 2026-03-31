@@ -1,0 +1,183 @@
+"""
+PDF信贷协议解析模块
+========================
+
+本模块提供PDF信贷协议的解析和客户匹配功能。
+
+主要组件：
+- BaseParser: 解析器基类
+- PDFParser: 基础PDF文本提取
+- LoanAgreementParser: 基础信贷协议解析器
+- EnhancedLoanAgreementParser: 增强版信贷协议解析器（支持多借款人等）
+- CustomerMatcher, DjangoCustomerMatcher: 客户匹配器
+- AgreementParsingService: Django服务层
+- 配置管理: ParserConfig, MatcherConfig, ConfigManager
+"""
+
+__version__ = '1.0.0'
+__author__ = '银行信贷系统开发团队'
+__email__ = 'dev@bank.com'
+
+# 导入基础解析器
+from .base_parser import BaseParser
+from .pdf_parser import PDFParser
+from .loan_agreement_parser import LoanAgreementParser
+from .enhanced_loan_parser import EnhancedLoanAgreementParser
+
+# 导入匹配器
+from .matcher import CustomerMatcher, DjangoCustomerMatcher
+
+# 导入配置管理
+from .config import (
+    ParserConfig,
+    MatcherConfig,
+    ConfigManager,
+    get_parser_config,
+    get_matcher_config
+)
+
+# 导入异常
+from .exceptions import (
+    ParserError,
+    PDFExtractionError,
+    ParserTimeoutError,
+    FieldExtractionError,
+    ValidationError,
+    ConfigurationError
+)
+
+# 导入服务层
+from .services import AgreementParsingService
+
+# 导入工具函数（可选）
+from .utils import (
+    extract_with_patterns,
+    parse_date_from_text,
+    parse_amount_from_text,
+    normalize_text,
+    calculate_confidence
+)
+
+# 定义导出内容
+__all__ = [
+    # 解析器类
+    'BaseParser',
+    'PDFParser',
+    'LoanAgreementParser',
+    'EnhancedLoanAgreementParser',
+    
+    # 匹配器类
+    'CustomerMatcher',
+    'DjangoCustomerMatcher',
+    
+    # 服务类
+    'AgreementParsingService',
+    
+    # 配置类
+    'ParserConfig',
+    'MatcherConfig',
+    'ConfigManager',
+    'get_parser_config',
+    'get_matcher_config',
+    
+    # 异常类
+    'ParserError',
+    'PDFExtractionError',
+    'ParserTimeoutError',
+    'FieldExtractionError',
+    'ValidationError',
+    'ConfigurationError',
+    
+    # 工具函数
+    'extract_with_patterns',
+    'parse_date_from_text',
+    'parse_amount_from_text',
+    'normalize_text',
+    'calculate_confidence',
+]
+
+# 设置包级别的日志
+import logging
+logging.getLogger(__name__).addHandler(logging.NullHandler())
+
+# 添加一些方便的别名
+# 版本别名
+LoanAgreementParserV1 = LoanAgreementParser
+LoanAgreementParserV2 = EnhancedLoanAgreementParser
+
+# 快速使用的工厂函数
+def create_parser(version: int = 2, config=None, use_ocr: bool = False):
+    """
+    创建解析器的便捷函数
+    
+    Args:
+        version: 解析器版本，1=基础版，2=增强版
+        config: 配置对象
+        use_ocr: 是否启用OCR
+        
+    Returns:
+        解析器实例
+    """
+    if version == 1:
+        from .loan_agreement_parser import LoanAgreementParser
+        return LoanAgreementParser(config, use_ocr)
+    else:
+        from .enhanced_loan_parser import EnhancedLoanAgreementParser
+        return EnhancedLoanAgreementParser(config, use_ocr)
+
+def get_parser_info():
+    """
+    获取解析器模块信息
+    
+    Returns:
+        模块信息字典
+    """
+    return {
+        'name': 'agreement_parser',
+        'version': __version__,
+        'author': __author__,
+        'available_parsers': [
+            {
+                'name': 'LoanAgreementParser',
+                'version': 1,
+                'description': '基础信贷协议解析器',
+                'class': 'agreement_parser.LoanAgreementParser'
+            },
+            {
+                'name': 'EnhancedLoanAgreementParser',
+                'version': 2,
+                'description': '增强版信贷协议解析器，支持多借款人、大金额优化等',
+                'class': 'agreement_parser.EnhancedLoanAgreementParser'
+            }
+        ],
+        'dependencies': [
+            'PyPDF2>=3.0.0',
+            'pytesseract>=0.3.10',
+            'Pillow>=10.0.0',
+            'reportlab>=4.0.0',
+        ]
+    }
+
+# 模块初始化消息
+_init_message = f"""
+{'='*60}
+银行信贷协议解析模块 v{__version__}
+{'='*60}
+✓ BaseParser - 解析器基类
+✓ PDFParser - PDF文本提取
+✓ LoanAgreementParser - 基础信贷协议解析
+✓ EnhancedLoanAgreementParser - 增强版解析器
+✓ CustomerMatcher - 客户匹配
+✓ Django集成服务
+{'='*60}
+使用示例:
+  from agreement_parser import EnhancedLoanAgreementParser
+  parser = EnhancedLoanAgreementParser()
+  result = parser.parse('loan_agreement.pdf')
+{'='*60}
+"""
+
+# 可选：在导入时显示欢迎信息（开发时有用）
+import os
+if os.getenv('AGREEMENT_PARSER_DEBUG', '').lower() in ('1', 'true', 'yes'):
+    print(_init_message)
