@@ -1,0 +1,138 @@
+"""
+基础解析器接口定义
+"""
+
+import abc
+import logging
+from typing import Dict, Any, Optional, List
+from datetime import datetime
+from decimal import Decimal
+from .exceptions import ParserError, PDFExtractionError
+from .config import ParserConfig, LogLevel
+
+class BaseParser(metaclass=abc.ABCMeta):
+    """PDF解析器基类"""
+    
+    def __init__(self, config: Optional[ParserConfig] = None):
+        """
+        初始化解析器
+        
+        Args:
+            config: 解析器配置
+        """
+        self.config = config or ParserConfig()
+        self.logger = self._setup_logger()
+        self.extracted_text = ""
+        
+    def _setup_logger(self) -> logging.Logger:
+        """设置日志记录器"""
+        logger = logging.getLogger(self.__class__.__name__)
+        
+        if not logger.handlers:
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter(self.config.LOG_FORMAT)
+            handler.setFormatter(formatter)
+            logger.addHandler(handler)
+            
+        logger.setLevel(self.config.LOG_LEVEL.value)
+        return logger
+    
+    @abc.abstractmethod
+    def extract_text(self, file_path: str) -> str:
+        """
+        从PDF文件中提取文本内容
+        
+        Args:
+            file_path: PDF文件路径
+            
+        Returns:
+            提取的文本内容
+            
+        Raises:
+            PDFExtractionError: PDF提取失败
+        """
+        pass
+    
+    @abc.abstractmethod
+    def parse(self, file_path: str) -> Dict[str, Any]:
+        """
+        解析PDF文件并返回结构化数据
+        
+        Args:
+            file_path: PDF文件路径
+            
+        Returns:
+            结构化数据字典
+            
+        Raises:
+            ParserError: 解析失败
+        """
+        pass
+    
+    def clean_text(self, text: str) -> str:
+        """
+        清理提取的文本
+        
+        Args:
+            text: 原始文本
+            
+        Returns:
+            清理后的文本
+        """
+        # 移除多余的空格和换行符
+        text = ' '.join(text.split())
+        
+        # 移除页眉页脚（简单实现）
+        if self.config.REMOVE_HEADER_FOOTER:
+            lines = text.split('\n')
+            if len(lines) > 10:
+                # 假设页眉在前5%，页脚在后5%
+                header_end = max(1, len(lines) // 20)
+                footer_start = len(lines) - header_end
+                text = '\n'.join(lines[header_end:footer_start])
+        
+        return text
+    
+    def validate_file(self, file_path: str) -> bool:
+        """
+        验证PDF文件
+        
+        Args:
+            file_path: 文件路径
+            
+        Returns:
+            是否有效
+            
+        Raises:
+            ParserError: 文件无效
+        """
+        import os
+        
+        if not os.path.exists(file_path):
+            self.logger.error(f"文件不存在: {file_path}")
+            raise ParserError(f"文件不存在: {file_path}")
+        
+        if not file_path.lower().endswith('.pdf'):
+            self.logger.error(f"文件不是PDF格式: {file_path}")
+            raise ParserError(f"文件不是PDF格式: {file_path}")
+        
+        file_size = os.path.getsize(file_path) / (1024 * 1024)  # MB
+        if file_size > self.config.MAX_FILE_SIZE_MB:
+            self.logger.error(f"文件过大: {file_size:.2f}MB > {self.config.MAX_FILE_SIZE_MB}MB")
+            raise ParserError(f"文件过大: {file_size:.2f}MB")
+        
+        return True
+    
+    def log_extraction_result(self, field: str, value: Any, confidence: float = 1.0):
+        """
+        记录字段提取结果
+        
+        Args:
+            field: 字段名
+            value: 提取的值
+            confidence: 置信度
+        """
+        if value is not None:
+            self.logger.info(f"提取到 {field}: {value} (置信度: {confidence:.2f})")
+        else:
+            self.logger.warning(f"未能提取 {field}")
