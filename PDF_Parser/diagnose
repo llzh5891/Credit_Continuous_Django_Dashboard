@@ -1,0 +1,34 @@
+# diagnose_circular_import.py
+import sys
+import os
+
+sys.path.insert(0, os.path.abspath('.'))
+
+print("🔍 诊断循环导入问题...")
+print("=" * 60)
+
+# 尝试导入 services
+try:
+    from parser.services import AgreementParsingService
+    print("✅ 成功导入 AgreementParsingService")
+except ImportError as e:
+    print(f"❌ 导入失败: {e}")
+    
+    # 检查是否是循环导入
+    print("\n🔍 检查模块依赖:")
+    
+    # 查看 services.py 导入
+    with open('parser/services.py', 'r', encoding='utf-8') as f:
+        content = f.read()
+        if 'enhanced_loan_parser' in content:
+            print("⚠️  services.py 中导入了 enhanced_loan_parser")
+        if 'from .services' in content:
+            print("⚠️  services.py 中有相对导入自身的语句")
+    
+    # 查看 enhanced_loan_parser.py 导入
+    with open('parser/enhanced_loan_parser.py', 'r', encoding='utf-8') as f:
+        content = f.read()
+        if 'from .services' in content:
+            print("⚠️  enhanced_loan_parser.py 中导入了 services")
+
+print("=" * 60)
