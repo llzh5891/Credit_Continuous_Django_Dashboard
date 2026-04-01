@@ -1,0 +1,27 @@
+{
+  "sample_001.pdf": {
+    "borrower_name": "上海ABC科技有限公司",
+    "agreement_date": "2023-12-31",
+    "facility_amount": 10000000.0,
+    "currency": "HKD",
+    "borrowers": ["上海ABC科技有限公司"],
+    "notes": "标准格式，首页有借款人信息"
+  },
+  "sample_002.pdf": {
+    "borrower_name": "北京DEF集团有限公司",
+    "agreement_date": "2024-01-15",
+    "facility_amount": 5000000.0,
+    "currency": "USD",
+    "borrowers": ["北京DEF集团有限公司"],
+    "notes": "表格格式，借款人在第二页"
+  },
+  "sample_003.pdf": {
+    "borrower_name": "深圳GHI股份有限公司",
+    "agreement_date": "2024-02-20",
+    "facility_amount": 20000000.0,
+    "currency": "CNY",
+    "borrowers": ["深圳GHI股份有限公司", "深圳GHI控股有限公司"],
+    "notes": "多个借款人，as borrower格式"
+  }
+  // ... 添加其他7个样本
+}
