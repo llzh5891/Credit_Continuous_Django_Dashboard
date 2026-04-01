@@ -1,34 +1,101 @@
-# diagnose_circular_import.py
-import sys
+# diagnose_parsers.py
 import os
+import sys
 
-sys.path.insert(0, os.path.abspath('.'))
+# 添加项目根目录
+project_root = os.path.abspath('.')
+sys.path.insert(0, project_root)
 
-print("🔍 诊断循环导入问题...")
+print("🔍 诊断 parsers 包导入问题")
 print("=" * 60)
+print(f"项目根目录: {project_root}")
+print(f"Python路径: {sys.path[:3]}")
+print()
 
-# 尝试导入 services
+# 检查文件夹结构
+print("📁 检查文件夹结构:")
+if os.path.exists('parsers'):
+    print("✅ 存在 parsers/ 文件夹")
+    print("  内容:", os.listdir('parsers'))
+else:
+    print("❌ 不存在 parsers/ 文件夹")
+    print("  当前目录内容:", os.listdir('.'))
+
+print()
+print("🔍 检查 parsers 包内容:")
+if os.path.exists('parsers/__init__.py'):
+    print("✅ 存在 parsers/__init__.py")
+else:
+    print("❌ 不存在 parsers/__init__.py")
+
+if os.path.exists('parsers/services.py'):
+    print("✅ 存在 parsers/services.py")
+    
+    # 检查 services.py 内容
+    with open('parsers/services.py', 'r', encoding='utf-8') as f:
+        content = f.read()
+        if 'class AgreementParsingService' in content:
+            print("✅  services.py 中包含 AgreementParsingService 类")
+        else:
+            print("❌  services.py 中不包含 AgreementParsingService 类")
+            # 显示开头几行
+            lines = content.split('\n')[:10]
+            print("  文件开头:")
+            for i, line in enumerate(lines, 1):
+                print(f"    {i}: {line}")
+else:
+    print("❌ 不存在 parsers/services.py")
+
+print()
+print("🔧 尝试导入:")
+print("-" * 40)
+
+# 尝试导入
 try:
-    from parser.services import AgreementParsingService
-    print("✅ 成功导入 AgreementParsingService")
+    import parsers
+    print(f"✅ 成功导入 parsers 包: {parsers}")
+    print(f"   位置: {parsers.__file__}")
 except ImportError as e:
-    print(f"❌ 导入失败: {e}")
+    print(f"❌ 无法导入 parsers 包: {e}")
+
+print("-" * 40)
+try:
+    from parsers import services
+    print(f"✅ 成功导入 parsers.services: {services}")
+    print(f"   位置: {services.__file__}")
+except ImportError as e:
+    print(f"❌ 无法导入 parsers.services: {e}")
+
+print("-" * 40)
+try:
+    from parsers.services import AgreementParsingService
+    print(f"✅ 成功导入 AgreementParsingService: {AgreementParsingService}")
+except ImportError as e:
+    print(f"❌ 无法导入 AgreementParsingService: {e}")
     
-    # 检查是否是循环导入
-    print("\n🔍 检查模块依赖:")
-    
-    # 查看 services.py 导入
-    with open('parser/services.py', 'r', encoding='utf-8') as f:
-        content = f.read()
-        if 'enhanced_loan_parser' in content:
-            print("⚠️  services.py 中导入了 enhanced_loan_parser")
-        if 'from .services' in content:
-            print("⚠️  services.py 中有相对导入自身的语句")
-    
-    # 查看 enhanced_loan_parser.py 导入
-    with open('parser/enhanced_loan_parser.py', 'r', encoding='utf-8') as f:
-        content = f.read()
-        if 'from .services' in content:
-            print("⚠️  enhanced_loan_parser.py 中导入了 services")
+    # 尝试查看 services 模块的内容
+    print("\n🔍 检查 services 模块的属性和内容:")
+    try:
+        import importlib
+        spec = importlib.util.find_spec("parsers.services")
+        if spec:
+            print(f"  找到 spec: {spec.origin}")
+            # 尝试手动加载
+            import importlib.util
+            module_spec = importlib.util.spec_from_file_location(
+                "parsers.services", 
+                "parsers/services.py"
+            )
+            if module_spec:
+                module = importlib.util.module_from_spec(module_spec)
+                module_spec.loader.exec_module(module)
+                print(f"  手动加载的模块: {module}")
+                print(f"  模块属性: {dir(module)}")
+                if hasattr(module, 'AgreementParsingService'):
+                    print("  ✅ 模块中有 AgreementParsingService 属性")
+                else:
+                    print("  ❌ 模块中没有 AgreementParsingService 属性")
+    except Exception as e2:
+        print(f"  调试错误: {e2}")
 
 print("=" * 60)
