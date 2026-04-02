@@ -1,0 +1,508 @@
+#!/usr/bin/env python
+"""
+评估解析器在真实样本上的表现 - 性能优化版
+"""
+
+import os
+import sys
+import json
+import time
+from datetime import datetime
+from pathlib import Path
+
+# ============================================
+# 1. 路径设置
+# ============================================
+# 获取当前脚本的绝对路径
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)  # 项目根目录
+
+print("=" * 70)
+print("📊 解析器性能评估工具")
+print("=" * 70)
+print(f"📁 脚本目录: {SCRIPT_DIR}")
+print(f"📁 项目根目录: {PROJECT_ROOT}")
+
+# 设置Python路径
+sys.path.insert(0, PROJECT_ROOT)
+
+# 文件路径
+EXPECTED_RESULTS_FILE = os.path.join(SCRIPT_DIR, 'expected_results.json')
+REAL_SAMPLES_DIR = os.path.join(SCRIPT_DIR, 'real_samples')
+EVALUATION_RESULTS_DIR = os.path.join(SCRIPT_DIR, 'evaluation_results')
+
+# 创建必要的目录
+os.makedirs(EVALUATION_RESULTS_DIR, exist_ok=True)
+
+# ============================================
+# 2. 检查文件和目录
+# ============================================
+print("\n🔍 检查文件和目录:")
+
+# 检查期望结果文件
+if not os.path.exists(EXPECTED_RESULTS_FILE):
+    print(f"❌ 期望结果文件不存在: {EXPECTED_RESULTS_FILE}")
+    print("   请创建 expected_results.json 文件，格式如下:")
+    print("""
+    {
+        "sample_001.pdf": {
+            "borrower_name": "上海ABC科技有限公司",
+            "agreement_date": "2023-12-31",
+            "facility_amount": 10000000.0,
+            "currency": "HKD",
+            "borrowers": ["上海ABC科技有限公司"],
+            "notes": "标准格式"
+        }
+    }
+    """)
+    sys.exit(1)
+else:
+    print(f"✅ 找到期望结果文件: {EXPECTED_RESULTS_FILE}")
+
+# 检查样本目录
+if not os.path.exists(REAL_SAMPLES_DIR):
+    print(f"❌ 样本目录不存在: {REAL_SAMPLES_DIR}")
+    print(f"   创建目录...")
+    os.makedirs(REAL_SAMPLES_DIR, exist_ok=True)
+    print(f"✅ 已创建样本目录，请将PDF文件放入此目录")
+    sys.exit(1)
+else:
+    pdf_files = [f for f in os.listdir(REAL_SAMPLES_DIR) if f.lower().endswith('.pdf')]
+    print(f"✅ 找到样本目录: {REAL_SAMPLES_DIR}")
+    print(f"   包含 {len(pdf_files)} 个PDF文件")
+    for pdf in pdf_files[:5]:  # 显示前5个
+        file_path = os.path.join(REAL_SAMPLES_DIR, pdf)
+        size_kb = os.path.getsize(file_path) / 1024
+        print(f"     - {pdf} ({size_kb:.1f} KB)")
+
+# ============================================
+# 3. 导入解析器
+# ============================================
+print("\n🔧 导入解析器...")
+try:
+    from parsers.enhanced_loan_parser import EnhancedLoanAgreementParser
+    print("✅ 成功导入 EnhancedLoanAgreementParser")
+except ImportError as e:
+    print(f"❌ 导入失败: {e}")
+    sys.exit(1)
+
+# ============================================
+# 4. 加载期望结果
+# ============================================
+print(f"\n📂 加载期望结果...")
+try:
+    with open(EXPECTED_RESULTS_FILE, 'r', encoding='utf-8') as f:
+        expected_results = json.load(f)
+    print(f"✅ 成功加载期望结果，包含 {len(expected_results)} 个样本")
+except Exception as e:
+    print(f"❌ 加载失败: {e}")
+    sys.exit(1)
+
+# ============================================
+# 5. 评估函数
+# ============================================
+def evaluate_single_pdf(pdf_path, expected_data, sample_num, total_samples):
+    """评估单个PDF"""
+    print(f"\n{'='*60}")
+    print(f"📄 样本 {sample_num}/{total_samples}: {os.path.basename(pdf_path)}")
+    if 'notes' in expected_data:
+        print(f"   📝 备注: {expected_data['notes']}")
+    
+    file_size = os.path.getsize(pdf_path) / 1024  # KB
+    print(f"   📊 文件大小: {file_size:.1f} KB")
+    
+    result = {
+        'file_name': os.path.basename(pdf_path),
+        'file_size_kb': round(file_size, 1),
+        'parse_success': False,
+        'parse_error': None,
+        'processing_time': 0,
+        'field_results': {},
+        'performance_metrics': {},
+    }
+    
+    # 创建解析器
+    parser = EnhancedLoanAgreementParser()
+    
+    # 解析PDF
+    start_time = time.time()
+    try:
+        parse_result = parser.parse(pdf_path)
+        elapsed = time.time() - start_time
+        
+        result['parse_success'] = True
+        result['processing_time'] = round(elapsed, 2)
+        result['parse_result'] = parse_result
+        
+        # 提取性能指标
+        if 'processing_time_seconds' in parse_result:
+            result['performance_metrics']['total_time'] = parse_result['processing_time_seconds']
+        if 'processing_mode' in parse_result:
+            result['performance_metrics']['mode'] = parse_result['processing_mode']
+        
+        print(f"   ✅ 解析成功")
+        print(f"   ⏱️  处理时间: {elapsed:.2f}秒")
+        print(f"   🎯 置信度: {parse_result.get('overall_confidence', 0):.2f}")
+        
+        # 比较字段
+        compare_fields(parse_result, expected_data, result)
+        
+    except Exception as e:
+        elapsed = time.time() - start_time
+        result['parse_success'] = False
+        result['parse_error'] = str(e)
+        result['processing_time'] = round(elapsed, 2)
+        
+        print(f"   ❌ 解析失败")
+        print(f"   ⏱️  失败时间: {elapsed:.2f}秒")
+        print(f"   💥 错误: {e}")
+    
+    return result
+
+def compare_fields(actual_result, expected_data, result_dict):
+    """比较字段"""
+    fields_to_check = [
+        ('borrower_name', '借款人名称'),
+        ('agreement_date', '协议日期'),
+        ('facility_amount', '融资金额'),
+        ('currency', '币种'),
+    ]
+    
+    for field_key, field_name in fields_to_check:
+        expected_val = expected_data.get(field_key)
+        actual_val = actual_result.get(field_key)
+        
+        field_result = {
+            'expected': expected_val,
+            'actual': actual_val,
+            'match': False,
+            'notes': ''
+        }
+        
+        if expected_val is None:
+            field_result['notes'] = '无期望值'
+            print(f"   ⏭️  {field_name}: 无期望值")
+        
+        elif actual_val is None:
+            field_result['notes'] = '未提取到'
+            print(f"   ❌ {field_name}: 未提取到 (期望: {expected_val})")
+        
+        else:
+            # 特殊处理不同类型的比较
+            if field_key == 'agreement_date':
+                # 日期比较
+                if hasattr(actual_val, 'isoformat'):
+                    actual_str = actual_val.isoformat()
+                else:
+                    actual_str = str(actual_val)
+                expected_str = str(expected_val)
+                
+                is_match = actual_str == expected_str
+                display_actual = actual_str
+                
+            elif field_key == 'facility_amount':
+                # 金额比较（允许1%误差）
+                try:
+                    actual_float = float(actual_val)
+                    expected_float = float(expected_val)
+                    tolerance = expected_float * 0.01  # 1%误差
+                    is_match = abs(actual_float - expected_float) <= tolerance
+                    display_actual = f"{actual_float:,.2f}"
+                except:
+                    is_match = False
+                    display_actual = str(actual_val)
+            
+            else:
+                # 字符串比较
+                is_match = str(actual_val).strip() == str(expected_val).strip()
+                display_actual = str(actual_val)
+            
+            field_result['match'] = is_match
+            
+            if is_match:
+                print(f"   ✅ {field_name}: {display_actual}")
+            else:
+                print(f"   ❌ {field_name}: 期望={expected_val}, 实际={display_actual}")
+        
+        result_dict['field_results'][field_key] = field_result
+    
+    # 检查多借款人
+    expected_borrowers = expected_data.get('borrowers', [])
+    actual_borrowers = actual_result.get('borrowers', [])
+    
+    if expected_borrowers and actual_borrowers:
+        # 简单比较：至少有一个匹配
+        match_found = False
+        for exp_borrower in expected_borrowers:
+            for act_borrower in actual_borrowers:
+                if exp_borrower in act_borrower or act_borrower in exp_borrower:
+                    match_found = True
+                    break
+            if match_found:
+                break
+        
+        borrowers_result = {
+            'expected': expected_borrowers,
+            'actual': actual_borrowers,
+            'match': match_found
+        }
+        
+        result_dict['field_results']['borrowers'] = borrowers_result
+        
+        if match_found:
+            print(f"   ✅ 借款人列表匹配: {actual_borrowers}")
+        else:
+            print(f"   ❌ 借款人列表: 期望={expected_borrowers}, 实际={actual_borrowers}")
+    elif expected_borrowers and not actual_borrowers:
+        print(f"   ❌ 借款人列表: 期望={expected_borrowers}, 实际=未提取到")
+    elif actual_borrowers:
+        print(f"   📋 提取到借款人列表: {actual_borrowers}")
+
+def calculate_statistics(results):
+    """计算统计信息"""
+    stats = {
+        'total_samples': len(results),
+        'successful_parses': 0,
+        'failed_parses': 0,
+        'average_time': 0,
+        'field_accuracy': {},
+        'performance_summary': {},
+    }
+    
+    # 初始化字段统计
+    field_keys = ['borrower_name', 'agreement_date', 'facility_amount', 'currency', 'borrowers']
+    for field in field_keys:
+        stats['field_accuracy'][field] = {
+            'total': 0,
+            'correct': 0,
+            'accuracy': 0.0
+        }
+    
+    total_time = 0
+    parse_times = []
+    
+    for result in results:
+        if result['parse_success']:
+            stats['successful_parses'] += 1
+            total_time += result['processing_time']
+            parse_times.append(result['processing_time'])
+            
+            # 统计字段准确率
+            for field in field_keys:
+                if field in result['field_results']:
+                    field_result = result['field_results'][field]
+                    stats['field_accuracy'][field]['total'] += 1
+                    if field_result.get('match', False):
+                        stats['field_accuracy'][field]['correct'] += 1
+        else:
+            stats['failed_parses'] += 1
+    
+    # 计算平均值
+    if stats['successful_parses'] > 0:
+        stats['average_time'] = total_time / stats['successful_parses']
+    
+    # 计算字段准确率
+    for field in field_keys:
+        field_stats = stats['field_accuracy'][field]
+        if field_stats['total'] > 0:
+            field_stats['accuracy'] = field_stats['correct'] / field_stats['total']
+    
+    # 性能摘要
+    if parse_times:
+        stats['performance_summary'] = {
+            'min_time': min(parse_times),
+            'max_time': max(parse_times),
+            'avg_time': sum(parse_times) / len(parse_times),
+            'total_time': sum(parse_times),
+        }
+    
+    return stats
+
+def print_statistics(stats, results):
+    """打印统计信息"""
+    print("\n" + "=" * 70)
+    print("📈 评估结果汇总")
+    print("=" * 70)
+    
+    print(f"📊 总体统计:")
+    print(f"   总样本数: {stats['total_samples']}")
+    print(f"   成功解析: {stats['successful_parses']}")
+    print(f"   解析失败: {stats['failed_parses']}")
+    print(f"   解析成功率: {stats['successful_parses']/stats['total_samples']*100:.1f}%")
+    
+    if stats['successful_parses'] > 0:
+        print(f"   平均处理时间: {stats['average_time']:.2f}秒")
+        if stats['performance_summary']:
+            perf = stats['performance_summary']
+            print(f"   最短时间: {perf['min_time']:.2f}秒")
+            print(f"   最长时间: {perf['max_time']:.2f}秒")
+            print(f"   总处理时间: {perf['total_time']:.2f}秒")
+    
+    print(f"\n🎯 字段准确率:")
+    fields_display = {
+        'borrower_name': '借款人名称',
+        'agreement_date': '协议日期',
+        'facility_amount': '融资金额',
+        'currency': '币种',
+        'borrowers': '借款人列表',
+    }
+    
+    for field_key, field_name in fields_display.items():
+        field_stats = stats['field_accuracy'][field_key]
+        if field_stats['total'] > 0:
+            accuracy_pct = field_stats['accuracy'] * 100
+            print(f"   {field_name}: {field_stats['correct']}/{field_stats['total']} = {accuracy_pct:.1f}%")
+    
+    print(f"\n🚀 性能评级:")
+    if stats['successful_parses'] == 0:
+        print("   ❌ 无法评级：所有解析都失败")
+    else:
+        avg_time = stats['average_time']
+        if avg_time < 2:
+            print(f"   ⚡ 优秀 (平均 {avg_time:.1f}秒)")
+        elif avg_time < 5:
+            print(f"   ✅ 良好 (平均 {avg_time:.1f}秒)")
+        elif avg_time < 10:
+            print(f"   ⚠️  一般 (平均 {avg_time:.1f}秒)")
+        else:
+            print(f"   ❌ 较慢 (平均 {avg_time:.1f}秒)")
+    
+    # 显示失败详情
+    failed_samples = [r for r in results if not r['parse_success']]
+    if failed_samples:
+        print(f"\n💥 失败样本详情:")
+        for sample in failed_samples[:3]:  # 显示前3个
+            print(f"   - {sample['file_name']}: {sample['parse_error']}")
+
+def generate_recommendations(stats, results):
+    """生成改进建议"""
+    print(f"\n🔧 改进建议:")
+    
+    # 检查解析失败
+    if stats['failed_parses'] > 0:
+        print(f"1. 修复解析崩溃问题 ({stats['failed_parses']} 个样本失败)")
+    
+    # 找出最差的字段
+    worst_field = None
+    worst_accuracy = 1.0
+    
+    for field_key, field_stats in stats['field_accuracy'].items():
+        if field_stats['total'] > 0 and field_stats['accuracy'] < worst_accuracy:
+            worst_accuracy = field_stats['accuracy']
+            worst_field = field_key
+    
+    if worst_field and worst_accuracy < 0.8:
+        field_names = {
+            'borrower_name': '借款人名称',
+            'agreement_date': '协议日期',
+            'facility_amount': '融资金额',
+            'currency': '币种',
+            'borrowers': '借款人列表',
+        }
+        
+        field_name = field_names.get(worst_field, worst_field)
+        print(f"2. 优先优化 {field_name} 提取 (准确率: {worst_accuracy*100:.1f}%)")
+        
+        # 显示一个失败例子
+        for result in results:
+            if (result['parse_success'] and 
+                worst_field in result['field_results'] and
+                not result['field_results'][worst_field].get('match', False)):
+                
+                exp = result['field_results'][worst_field].get('expected')
+                act = result['field_results'][worst_field].get('actual')
+                print(f"   示例: {result['file_name']}")
+                print(f"     期望: {exp}")
+                print(f"     实际: {act}")
+                break
+    
+    # 性能建议
+    if stats['average_time'] > 5:
+        print(f"3. 优化处理速度 (平均 {stats['average_time']:.1f}秒)")
+    
+    if stats['successful_parses'] / stats['total_samples'] > 0.8:
+        print(f"4. 解析器表现良好，可以增加更多样本优化")
+    elif stats['successful_parses'] / stats['total_samples'] > 0.5:
+        print(f"4. 需要优化核心解析逻辑")
+    else:
+        print(f"4. 需要重新设计解析策略")
+
+def save_results(results, stats):
+    """保存评估结果"""
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    results_file = os.path.join(EVALUATION_RESULTS_DIR, f'evaluation_{timestamp}.json')
+    
+    # 准备保存的数据
+    save_data = {
+        'evaluation_time': datetime.now().isoformat(),
+        'statistics': stats,
+        'results': results,
+    }
+    
+    # 转换日期等不可JSON序列化的对象
+    def convert_for_json(obj):
+        if hasattr(obj, 'isoformat'):
+            return obj.isoformat()
+        return str(obj)
+    
+    with open(results_file, 'w', encoding='utf-8') as f:
+        json.dump(save_data, f, indent=2, ensure_ascii=False, default=convert_for_json)
+    
+    print(f"\n💾 详细结果已保存: {results_file}")
+    return results_file
+
+# ============================================
+# 6. 主评估逻辑
+# ============================================
+def main():
+    print("\n" + "="*70)
+    print("🚀 开始评估解析器性能")
+    print("="*70)
+    
+    all_results = []
+    
+    # 评估每个样本
+    sample_num = 1
+    total_samples = len(expected_results)
+    
+    for pdf_file, expected in expected_results.items():
+        pdf_path = os.path.join(REAL_SAMPLES_DIR, pdf_file)
+        
+        if not os.path.exists(pdf_path):
+            print(f"\n⚠️  跳过: {pdf_file} (文件不存在)")
+            continue
+        
+        result = evaluate_single_pdf(pdf_path, expected, sample_num, total_samples)
+        all_results.append(result)
+        
+        sample_num += 1
+    
+    # 计算统计
+    stats = calculate_statistics(all_results)
+    
+    # 打印统计
+    print_statistics(stats, all_results)
+    
+    # 生成建议
+    generate_recommendations(stats, all_results)
+    
+    # 保存结果
+    results_file = save_results(all_results, stats)
+    
+    print("\n" + "="*70)
+    print("✅ 评估完成!")
+    print("="*70)
+    
+    return all_results, stats, results_file
+
+if __name__ == '__main__':
+    try:
+        results, stats, results_file = main()
+    except KeyboardInterrupt:
+        print("\n\n⚠️  评估被用户中断")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n❌ 评估过程中发生错误: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
