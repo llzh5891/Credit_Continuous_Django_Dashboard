@@ -1,0 +1,220 @@
+#!/usr/bin/env python
+"""
+评估解析器在真实样本上的表现
+"""
+
+import os
+import sys
+import json
+from datetime import datetime
+from pathlib import Path
+
+# 添加项目根目录
+sys.path.insert(0, os.path.abspath('.'))
+
+from parsers.enhanced_loan_parser import EnhancedLoanAgreementParser
+
+def evaluate_parser(samples_dir='tests/real_samples', 
+                   expected_file='tests/expected_results.json'):
+    """
+    评估解析器性能
+    """
+    print("📊 解析器性能评估")
+    print("=" * 60)
+    
+    # 加载期望结果
+    with open(expected_file, 'r', encoding='utf-8') as f:
+        expected_results = json.load(f)
+    
+    # 创建解析器
+    parser = EnhancedLoanAgreementParser()
+    
+    results = {
+        'total_samples': 0,
+        'successful_parses': 0,
+        'failed_parses': 0,
+        'field_accuracy': {},
+        'samples': []
+    }
+    
+    # 评估每个样本
+    for pdf_file, expected in expected_results.items():
+        pdf_path = os.path.join(samples_dir, pdf_file)
+        
+        if not os.path.exists(pdf_path):
+            print(f"⚠️  文件不存在: {pdf_file}")
+            continue
+        
+        print(f"\n🔍 处理: {pdf_file}")
+        print(f"   期望: {expected.get('notes', '')}")
+        
+        sample_result = {
+            'file': pdf_file,
+            'expected': expected,
+            'actual': None,
+            'success': False,
+            'field_matches': {}
+        }
+        
+        try:
+            # 解析PDF
+            result = parser.parse(pdf_path)
+            sample_result['actual'] = result
+            sample_result['success'] = True
+            
+            # 比较字段
+            fields_to_check = ['borrower_name', 'agreement_date', 
+                              'facility_amount', 'currency']
+            
+            for field in fields_to_check:
+                expected_val = expected.get(field)
+                actual_val = result.get(field)
+                
+                if expected_val is not None and actual_val is not None:
+                    # 特殊处理日期比较
+                    if field == 'agreement_date' and isinstance(actual_val, datetime.date):
+                        actual_val = actual_val.isoformat()
+                    
+                    # 比较
+                    if field == 'facility_amount':
+                        # 金额允许小误差
+                        match = abs(float(expected_val) - float(actual_val)) < 0.01
+                    else:
+                        match = str(expected_val) == str(actual_val)
+                    
+                    sample_result['field_matches'][field] = {
+                        'expected': expected_val,
+                        'actual': actual_val,
+                        'match': match
+                    }
+                    
+                    if match:
+                        print(f"    ✅ {field}: {actual_val}")
+                    else:
+                        print(f"    ❌ {field}: 期望={expected_val}, 实际={actual_val}")
+                else:
+                    sample_result['field_matches'][field] = {
+                        'expected': expected_val,
+                        'actual': actual_val,
+                        'match': False
+                    }
+                    if expected_val is None:
+                        print(f"    ⏭️  {field}: 无期望值")
+                    else:
+                        print(f"    ❌ {field}: 未提取到 (期望={expected_val})")
+            
+            # 检查多借款人
+            if 'borrowers' in expected:
+                expected_borrowers = expected['borrowers']
+                actual_borrowers = result.get('borrowers', [])
+                
+                if expected_borrowers and actual_borrowers:
+                    # 简单比较：至少有一个匹配
+                    match = any(b in str(actual_borrowers) for b in expected_borrowers)
+                    sample_result['field_matches']['borrowers'] = {
+                        'expected': expected_borrowers,
+                        'actual': actual_borrowers,
+                        'match': match
+                    }
+                    
+                    if match:
+                        print(f"    ✅ 借款人匹配: {actual_borrowers}")
+                    else:
+                        print(f"    ❌ 借款人: 期望={expected_borrowers}, 实际={actual_borrowers}")
+            
+            print(f"    📈 置信度: {result.get('overall_confidence', 0):.2f}")
+            
+        except Exception as e:
+            sample_result['error'] = str(e)
+            print(f"    💥 解析失败: {e}")
+        
+        results['samples'].append(sample_result)
+        results['total_samples'] += 1
+        
+        if sample_result['success']:
+            results['successful_parses'] += 1
+        else:
+            results['failed_parses'] += 1
+    
+    # 计算准确率
+    print("\n" + "=" * 60)
+    print("📈 评估结果汇总")
+    print("=" * 60)
+    
+    total_fields = 0
+    matched_fields = 0
+    
+    for sample in results['samples']:
+        for field, match_info in sample.get('field_matches', {}).items():
+            total_fields += 1
+            if match_info.get('match', False):
+                matched_fields += 1
+    
+    accuracy = matched_fields / total_fields if total_fields > 0 else 0
+    
+    print(f"总样本数: {results['total_samples']}")
+    print(f"成功解析: {results['successful_parses']}")
+    print(f"解析失败: {results['failed_parses']}")
+    print(f"解析成功率: {results['successful_parses']/results['total_samples']*100:.1f}%")
+    print(f"字段准确率: {accuracy*100:.1f}% ({matched_fields}/{total_fields})")
+    print(f"总体表现: {'优秀' if accuracy > 0.9 else '良好' if accuracy > 0.7 else '需要改进'}")
+    
+    # 保存结果
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    results_file = f'evaluation_results_{timestamp}.json'
+    
+    with open(results_file, 'w', encoding='utf-8') as f:
+        json.dump(results, f, indent=2, ensure_ascii=False, default=str)
+    
+    print(f"\n📁 详细结果已保存: {results_file}")
+    
+    return results, accuracy
+
+def analyze_failures(results):
+    """
+    分析失败原因
+    """
+    print("\n" + "=" * 60)
+    print("🔍 失败分析")
+    print("=" * 60)
+    
+    failure_reasons = {
+        'borrower_name': 0,
+        'agreement_date': 0,
+        'facility_amount': 0,
+        'currency': 0,
+        'parse_error': 0,
+        'other': 0
+    }
+    
+    for sample in results['samples']:
+        if not sample.get('success'):
+            failure_reasons['parse_error'] += 1
+            print(f"❌ {sample['file']}: {sample.get('error', '未知错误')}")
+        else:
+            for field, match_info in sample.get('field_matches', {}).items():
+                if not match_info.get('match', False):
+                    failure_reasons[field] += 1
+    
+    print(f"\n📊 失败分布:")
+    for reason, count in failure_reasons.items():
+        if count > 0:
+            print(f"  {reason}: {count} 次")
+    
+    return failure_reasons
+
+if __name__ == '__main__':
+    # 运行评估
+    results, accuracy = evaluate_parser()
+    
+    # 分析失败
+    if accuracy < 1.0:
+        analyze_failures(results)
+        
+        print("\n🎯 改进建议:")
+        if results['failed_parses'] > 0:
+            print("1. 修复解析崩溃问题")
+        if accuracy < 0.8:
+            print("2. 优化借款人提取逻辑")
+        if accuracy < 0.9:
+            print("3. 改进日期和金额识别")
