@@ -1,0 +1,333 @@
+# parsers/fast_loan_parser.py
+"""
+完全独立的快速信贷协议解析器
+不继承任何父类，避免隐藏的性能问题
+"""
+
+import os
+import re
+import time
+import logging
+from typing import Dict, Any, Optional, List
+from datetime import datetime
+from decimal import Decimal, InvalidOperation
+import PyPDF2
+
+class FastLoanAgreementParser:
+    """
+    快速信贷协议解析器
+    完全独立实现，确保所有时间限制生效
+    """
+    
+    def __init__(self, config=None):
+        """
+        初始化快速解析器
+        
+        Args:
+            config: 配置字典，可选
+        """
+        # 设置日志
+        self.logger = logging.getLogger(__name__)
+        
+        # 性能限制配置（单位：秒/字符数）
+        self.limits = {
+            'total_time': 10.0,           # 总解析时间
+            'text_extraction': 4.0,       # 文本提取
+            'borrower_extraction': 2.0,   # 借款人提取
+            'amount_extraction': 2.0,     # 金额提取
+            'date_extraction': 2.0,       # 日期提取
+            'max_text_chars': 5000,       # 最大处理字符
+            'max_pages': 2,               # 最大处理页数
+        }
+        
+        # 正则表达式模式
+        self.patterns = self._init_patterns()
+        
+        self.logger.info("🚀 初始化快速解析器")
+        self.logger.info(f"   时间限制: 总{self.limits['total_time']}秒")
+        self.logger.info(f"   字数限制: 前{self.limits['max_text_chars']}字符")
+    
+    def _init_patterns(self):
+        """初始化正则表达式模式"""
+        return {
+            'borrower': [
+                (r'([^,\n]+?)(?:,\s*[^,\n]+)*\s+as\s+borrower', True, 1.0),
+                (r'(?:借款人|Borrower|甲方)[:：]\s*([^\n\r]{1,50})', True, 0.9),
+                (r'Borrower\s*[:：]\s*([^\n,]+)', True, 0.8),
+            ],
+            'amount': [
+                (r'([A-Z]{3})\s+([0-9]{1,3}(?:,[0-9]{3}){2,}(?:\.[0-9]{2})?)', False, 1.0),
+                (r'Facility Amount[:：]\s*([A-Z]{3})\s+([0-9,]+(?:\.[0-9]{2})?)', True, 1.0),
+            ],
+            'date': [
+                (r'^\s*(\d{4}[-/年]\d{1,2}[-/月]\d{1,2}日?)\s*$', False, 0.9),
+                (r'(?:Date|日期)[:：]\s*(\d{4}[-/年]\d{1,2}[-/月]\d{1,2}日?)', True, 0.9),
+            ]
+        }
+    
+    def parse(self, file_path: str) -> Dict[str, Any]:
+        """
+        解析PDF文件
+        
+        Args:
+            file_path: PDF文件路径
+            
+        Returns:
+            解析结果
+        """
+        total_start = time.time()
+        
+        result = {
+            "file_name": os.path.basename(file_path),
+            "processing_start": datetime.now().isoformat(),
+            "processing_mode": "fast_independent",
+            "success": False,
+            "error": None,
+            "warnings": [],
+            "performance": {
+                "total_time": 0,
+                "steps": {}
+            }
+        }
+        
+        try:
+            # 1. 提取文本（有限制）
+            text, text_time = self._extract_text_fast(file_path)
+            result["performance"]["steps"]["text_extraction"] = text_time
+            result["text_length"] = len(text)
+            
+            if len(text) < 100:
+                result["warnings"].append("文本过短")
+                return result
+            
+            # 2. 提取借款人（有限制）
+            borrower_result, borrower_time = self._extract_borrower_fast(text)
+            result.update(borrower_result)
+            result["performance"]["steps"]["borrower_extraction"] = borrower_time
+            
+            # 3. 提取金额（有限制）
+            amount_result, amount_time = self._extract_amount_fast(text)
+            result.update(amount_result)
+            result["performance"]["steps"]["amount_extraction"] = amount_time
+            
+            # 4. 提取日期（有限制）
+            date_result, date_time = self._extract_date_fast(text)
+            result.update(date_result)
+            result["performance"]["steps"]["date_extraction"] = date_time
+            
+            # 计算总时间
+            total_time = time.time() - total_start
+            result["performance"]["total_time"] = total_time
+            result["processing_end"] = datetime.now().isoformat()
+            result["success"] = True
+            
+            self.logger.info(f"✅ 解析成功，总耗时: {total_time:.2f}秒")
+            
+        except Exception as e:
+            total_time = time.time() - total_start
+            result["error"] = str(e)
+            result["performance"]["total_time"] = total_time
+            self.logger.error(f"❌ 解析失败: {e}")
+        
+        return result
+    
+    def _extract_text_fast(self, file_path: str) -> tuple[str, float]:
+        """
+        快速提取文本
+        返回: (文本, 耗时)
+        """
+        start = time.time()
+        max_time = self.limits['text_extraction']
+        max_pages = self.limits['max_pages']
+        
+        try:
+            with open(file_path, 'rb') as f:
+                pdf = PyPDF2.PdfReader(f)
+                total_pages = len(pdf.pages)
+                pages = min(max_pages, total_pages)
+                
+                texts = []
+                for i in range(pages):
+                    # 检查时间
+                    if time.time() - start > max_time:
+                        break
+                    
+                    page_text = pdf.pages[i].extract_text()
+                    if page_text:
+                        texts.append(page_text)
+                
+                result = "\n".join(texts)
+                
+                # 限制总字符数
+                max_chars = self.limits['max_text_chars']
+                if len(result) > max_chars:
+                    result = result[:max_chars]
+                
+                elapsed = time.time() - start
+                return result, elapsed
+                
+        except Exception as e:
+            elapsed = time.time() - start
+            self.logger.error(f"文本提取失败: {e}")
+            return "", elapsed
+    
+    def _extract_borrower_fast(self, text: str) -> tuple[Dict[str, Any], float]:
+        """
+        快速提取借款人
+        返回: (结果字典, 耗时)
+        """
+        start = time.time()
+        max_time = self.limits['borrower_extraction']
+        
+        result = {
+            "borrower_name": None,
+            "borrower_confidence": 0.0,
+            "borrowers": [],
+        }
+        
+        # 限制搜索范围
+        max_chars = 3000
+        search_text = text[:max_chars] if len(text) > max_chars else text
+        
+        borrowers = []
+        
+        for pattern_str, ignore_case, weight in self.patterns['borrower']:
+            # 检查时间
+            if time.time() - start > max_time:
+                break
+            
+            try:
+                flags = re.IGNORECASE if ignore_case else 0
+                pattern = re.compile(pattern_str, flags)
+                
+                match = pattern.search(search_text)
+                if match and match.groups():
+                    company = match.group(1).strip()
+                    
+                    # 清理
+                    company = re.sub(r'\s+as\s+borrower.*$', '', company, flags=re.IGNORECASE)
+                    company = company.strip(' ,.;:')
+                    
+                    if company and company not in borrowers:
+                        borrowers.append(company)
+                        
+                        # 如果找到足够，提前退出
+                        if len(borrowers) >= 2:
+                            break
+            
+            except:
+                continue
+        
+        if borrowers:
+            result["borrower_name"] = borrowers[0]
+            result["borrowers"] = borrowers
+            result["borrower_confidence"] = 0.8
+        
+        elapsed = time.time() - start
+        return result, elapsed
+    
+    def _extract_amount_fast(self, text: str) -> tuple[Dict[str, Any], float]:
+        """
+        快速提取金额
+        返回: (结果字典, 耗时)
+        """
+        start = time.time()
+        max_time = self.limits['amount_extraction']
+        
+        result = {
+            "facility_amount": None,
+            "currency": None,
+            "amount_confidence": 0.0,
+        }
+        
+        best_amount = None
+        best_currency = None
+        
+        for pattern_str, ignore_case, weight in self.patterns['amount']:
+            if time.time() - start > max_time:
+                break
+            
+            try:
+                flags = re.IGNORECASE if ignore_case else 0
+                pattern = re.compile(pattern_str, flags)
+                
+                for match in pattern.finditer(text):
+                    if time.time() - start > max_time:
+                        break
+                    
+                    if len(match.groups()) >= 2:
+                        currency = match.group(1)
+                        amount_str = match.group(2).replace(',', '')
+                        
+                        try:
+                            amount = float(amount_str)
+                            if amount > 10000:  # 只取大金额
+                                best_amount = amount
+                                best_currency = currency
+                                break
+                        except:
+                            continue
+                
+                if best_amount:
+                    break
+            
+            except:
+                continue
+        
+        if best_amount:
+            result["facility_amount"] = best_amount
+            result["currency"] = best_currency
+            result["amount_confidence"] = 0.9
+        
+        elapsed = time.time() - start
+        return result, elapsed
+    
+    def _extract_date_fast(self, text: str) -> tuple[Dict[str, Any], float]:
+        """
+        快速提取日期
+        返回: (结果字典, 耗时)
+        """
+        start = time.time()
+        max_time = self.limits['date_extraction']
+        
+        result = {
+            "agreement_date": None,
+            "date_confidence": 0.0,
+        }
+        
+        # 只搜索前2000字符
+        search_text = text[:2000] if len(text) > 2000 else text
+        
+        for pattern_str, ignore_case, weight in self.patterns['date']:
+            if time.time() - start > max_time:
+                break
+            
+            try:
+                flags = re.IGNORECASE if ignore_case else 0
+                pattern = re.compile(pattern_str, flags)
+                
+                match = pattern.search(search_text)
+                if match and match.groups():
+                    date_str = match.group(1)
+                    
+                    # 简单日期解析
+                    date_formats = [
+                        r'(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})',
+                        r'(\d{1,2})/(\d{1,2})/(\d{4})',
+                    ]
+                    
+                    for date_pattern in date_formats:
+                        date_match = re.search(date_pattern, date_str)
+                        if date_match:
+                            result["agreement_date"] = date_str
+                            result["date_confidence"] = 0.8
+                            break
+                    
+                    if result["agreement_date"]:
+                        break
+            
+            except:
+                continue
+        
+        elapsed = time.time() - start
+        return result, elapsed
