@@ -27,6 +27,19 @@ from .models import AgreementPDF
 from .services.parse_service import parse_agreement_pdf_sync
 
 # 1. 在views.py顶部添加logger
+import logging
+import sys
+
+# 直接配置控制台日志
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)  # 输出到控制台
+    ]
+)
+
+logger = logging.getLogger(__name__)
 logger = logging.getLogger(__name__)
 
 class AgreementUploadView(LoginRequiredMixin, CreateView):
