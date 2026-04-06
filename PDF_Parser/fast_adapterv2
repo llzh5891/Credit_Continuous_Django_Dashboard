@@ -1,0 +1,153 @@
+# fast_loan_parser.py
+import re
+import json
+from datetime import datetime
+from typing import Dict, Any, Optional, Tuple
+import PyPDF2
+import pdfplumber
+from collections import defaultdict
+
+class FastLoanAgreementParser:
+    """快速贷款协议解析器"""
+    
+    def __init__(self):
+        self.keyword_patterns = {
+            'borrower': [
+                r'借款人[：:]\s*([^\n\r]+)',
+                r'借款方[：:]\s*([^\n\r]+)',
+                r'borrower[：:]\s*([^\n\r]+)',
+                r'client[：:]\s*([^\n\r]+)',
+                r'客户[：:]\s*([^\n\r]+)',
+            ],
+            'lender': [
+                r'贷款人[：:]\s*([^\n\r]+)',
+                r'贷款方[：:]\s*([^\n\r]+)',
+                r'lender[：:]\s*([^\n\r]+)',
+            ],
+            'amount': [
+                r'贷款金额[：:]\s*([0-9,]+(?:\.\d+)?)\s*(?:元|人民币|RMB|USD|HKD|港币|美元)?',
+                r'金额[：:]\s*([0-9,]+(?:\.\d+)?)',
+                r'amount[：:]\s*([0-9,]+(?:\.\d+)?)',
+                r'\$?\s*([0-9,]+(?:\.\d+)?)\s*(?:元|人民币|RMB|USD|HKD|港币|美元)',
+            ],
+            'currency': [
+                r'币种[：:]\s*([^\n\r]+)',
+                r'currency[：:]\s*([^\n\r]+)',
+                r'([A-Z]{3})',
+            ],
+            'date': [
+                r'日期[：:]\s*(\d{4}[-/年]\d{1,2}[-/月]\d{1,2}日?)',
+                r'date[：:]\s*(\d{4}[-/]\d{1,2}[-/]\d{1,2})',
+                r'agreement date[：:]\s*([^\n\r]+)',
+            ],
+        }
+    
+    def extract_text_from_pdf(self, pdf_path: str) -> str:
+        """从PDF提取文本"""
+        try:
+            with pdfplumber.open(pdf_path) as pdf:
+                text = ""
+                for page in pdf.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text += page_text + "\n"
+                return text
+        except Exception as e:
+            print(f"pdfplumber提取失败: {e}")
+            # 回退到PyPDF2
+            try:
+                with open(pdf_path, 'rb') as file:
+                    pdf_reader = PyPDF2.PdfReader(file)
+                    text = ""
+                    for page in pdf_reader.pages:
+                        text += page.extract_text() + "\n"
+                    return text
+            except Exception as e2:
+                print(f"PyPDF2也失败: {e2}")
+                return ""
+    
+    def extract_with_patterns(self, text: str, patterns: list) -> Tuple[Optional[str], float]:
+        """使用正则表达式提取信息"""
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                value = match.group(1).strip()
+                confidence = 0.9
+                return value, confidence
+        
+        return None, 0.0
+    
+    def parse(self, file_path: str) -> Dict[str, Any]:
+        """解析PDF文件"""
+        result = {
+            "success": False,
+            "error": "",
+            "file_path": file_path,
+            "borrower_name": None,
+            "borrower_confidence": 0.0,
+            "facility_amount": None,
+            "amount_confidence": 0.0,
+            "currency": "HKD",
+            "agreement_date": None,
+            "date_confidence": 0.0,
+            "parsed_text": "",
+            "parsing_time": 0,
+        }
+        
+        import time
+        start_time = time.time()
+        
+        try:
+            # 1. 提取文本
+            text = self.extract_text_from_pdf(file_path)
+            if not text:
+                result["error"] = "无法从PDF提取文本"
+                return result
+            
+            result["parsed_text"] = text[:1000]  # 只存储前1000字符
+            
+            # 2. 提取关键信息
+            # 借款人
+            borrower, borrower_conf = self.extract_with_patterns(
+                text, self.keyword_patterns['borrower']
+            )
+            if borrower:
+                result["borrower_name"] = borrower
+                result["borrower_confidence"] = borrower_conf
+            
+            # 金额
+            amount, amount_conf = self.extract_with_patterns(
+                text, self.keyword_patterns['amount']
+            )
+            if amount:
+                # 清理金额
+                amount_clean = amount.replace(',', '')
+                try:
+                    result["facility_amount"] = float(amount_clean)
+                    result["amount_confidence"] = amount_conf
+                except:
+                    result["facility_amount"] = amount
+            
+            # 币种
+            currency, currency_conf = self.extract_with_patterns(
+                text, self.keyword_patterns['currency']
+            )
+            if currency and len(currency) == 3:
+                result["currency"] = currency.upper()
+            
+            # 日期
+            date_str, date_conf = self.extract_with_patterns(
+                text, self.keyword_patterns['date']
+            )
+            if date_str:
+                result["agreement_date"] = date_str
+                result["date_confidence"] = date_conf
+            
+            result["success"] = True
+            result["parsing_time"] = time.time() - start_time
+            
+        except Exception as e:
+            result["error"] = f"解析异常: {str(e)}"
+            result["parsing_time"] = time.time() - start_time
+        
+        return result
