@@ -1,0 +1,25 @@
+# 测试脚本 test_fix.py
+import os
+from pathlib import Path
+
+# 你的实际路径
+test_path = r"C:\Users\YourName\project\uploads\test.pdf"  # 替换为你的实际路径
+
+print("原始路径:", test_path)
+print("原始存在:", os.path.exists(test_path))
+
+# 方法1: 使用原始字符串
+fixed1 = r"C:\Users\YourName\project\uploads\test.pdf"
+print("方法1:", fixed1, "存在:", os.path.exists(fixed1))
+
+# 方法2: 转义
+fixed2 = test_path.replace('\\', '\\\\')
+print("方法2:", fixed2, "存在:", os.path.exists(fixed2))
+
+# 方法3: 使用正斜杠
+fixed3 = test_path.replace('\\', '/')
+print("方法3:", fixed3, "存在:", os.path.exists(fixed3))
+
+# 方法4: 使用pathlib
+fixed4 = str(Path(test_path))
+print("方法4:", fixed4, "存在:", os.path.exists(fixed4))
