@@ -1,0 +1,9 @@
+
+<!-- 修改后，手动渲染每个字段 -->
+<div class="form-group">
+    {{ form.original_file.label_tag }}
+    {{ form.original_file }}
+    {% if form.original_file.errors %}
+    <div class="error">{{ form.original_file.errors }}</div>
+    {% endif %}
+</div>
