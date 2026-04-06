@@ -1,0 +1,66 @@
+# agreements/views.py
+import os
+import sys
+from django.contrib import messages
+from django.views.generic import CreateView
+from .models import AgreementPDF
+from .services.parse_service import parse_agreement_pdf_sync
+import threading
+import traceback
+
+class AgreementUploadView(CreateView):
+    # ... 其他代码不变 ...
+    
+    def form_valid(self, form):
+        """文件上传成功后的处理"""
+        print("\n" + "="*50)
+        print("=== 文件上传开始 ===")
+        print(f"表单数据: {form.cleaned_data}")
+        
+        # 调用父类方法保存文件
+        response = super().form_valid(form)
+        agreement = self.object
+        
+        print(f"=== 文件保存成功 ===")
+        print(f"协议ID: {agreement.id}")
+        print(f"文件名: {agreement.file_name}")
+        print(f"原始文件: {agreement.original_file}")
+        print(f"解析状态: {agreement.parsing_status}")
+        
+        # 打印文件路径
+        try:
+            if hasattr(agreement.original_file, 'path'):
+                file_path = agreement.original_file.path
+                print(f"文件路径: {file_path}")
+                print(f"文件存在: {os.path.exists(file_path)}")
+                if os.path.exists(file_path):
+                    print(f"文件大小: {os.path.getsize(file_path)} 字节")
+        except Exception as e:
+            print(f"获取文件路径错误: {e}")
+        
+        # 同步解析（用于调试，不使用线程）
+        print("\n=== 开始同步解析（调试模式）===")
+        try:
+            success = parse_agreement_pdf_sync(agreement.id)
+            print(f"同步解析结果: {success}")
+            
+            # 重新获取对象以查看最新状态
+            agreement.refresh_from_db()
+            print(f"解析后状态: {agreement.parsing_status}")
+            print(f"借款人: {agreement.borrower_name}")
+            print(f"金额: {agreement.facility_amount}")
+            
+            if success:
+                messages.success(self.request, f"解析成功: {agreement.borrower_name}")
+            else:
+                messages.error(self.request, f"解析失败，请检查文件格式")
+                
+        except Exception as e:
+            print(f"解析异常: {e}")
+            traceback.print_exc()
+            messages.error(self.request, f"解析异常: {str(e)}")
+        
+        print("=== 文件上传完成 ===")
+        print("="*50 + "\n")
+        
+        return response
