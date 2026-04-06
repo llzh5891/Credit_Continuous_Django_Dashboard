@@ -15,7 +15,88 @@ import uuid
 from .models import AgreementPDF, ParsingLog
 from .forms import AgreementUploadForm
 from credit_app.models import Customer, CreditApplication, Facility
+##adding logging functino
+# agreements/views.py
+import threading
+import logging
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.views.generic import ListView, DetailView, CreateView
+from django.urls import reverse_lazy
+from django.contrib import messages
+from .models import AgreementPDF
+from .services.parse_service import parse_agreement_pdf_sync
 
+# 1. 在views.py顶部添加logger
+logger = logging.getLogger(__name__)
+
+class AgreementUploadView(LoginRequiredMixin, CreateView):
+    model = AgreementPDF
+    fields = ['original_file']
+    template_name = 'agreements/upload.html'
+    success_url = reverse_lazy('agreement-list')
+    
+    def get_form(self, form_class=None):
+        """自定义表单，添加上传控件样式"""
+        form = super().get_form(form_class)
+        form.fields['original_file'].widget.attrs.update({
+            'class': 'file-input',
+            'accept': '.pdf'
+        })
+        return form
+    
+    def form_valid(self, form):
+        """文件上传成功后的处理"""
+        logger.info("=== 开始处理PDF上传 ===")
+        
+        # 保存协议
+        response = super().form_valid(form)
+        agreement = self.object
+        
+        logger.info(f"1. 文件上传成功: {agreement.file_name} (ID: {agreement.id})")
+        logger.info(f"2. 文件路径: {agreement.original_file.path}")
+        
+        # 记录解析开始
+        agreement.parsing_status = 'parsing'
+        agreement.save(update_fields=['parsing_status'])
+        logger.info(f"3. 状态更新为: parsing")
+        
+        # 在后台线程中解析
+        def parse_in_background():
+            try:
+                logger.info(f"4. 开始后台解析 (协议ID: {agreement.id})")
+                success = parse_agreement_pdf_sync(agreement.id)
+                
+                if success:
+                    messages.success(
+                        self.request, 
+                        f"协议 '{agreement.file_name}' 解析成功！"
+                    )
+                    logger.info(f"5. 解析成功: {agreement.file_name}")
+                else:
+                    messages.warning(
+                        self.request,
+                        f"协议 '{agreement.file_name}' 解析完成，但可能未提取到全部信息"
+                    )
+                    logger.warning(f"5. 解析完成但有警告: {agreement.file_name}")
+                    
+            except Exception as e:
+                # 记录错误但不中断用户操作
+                agreement.parsing_status = 'error'
+                agreement.save(update_fields=['parsing_status'])
+                
+                error_msg = f"协议 '{agreement.file_name}' 解析失败: {str(e)}"
+                messages.error(self.request, error_msg)
+                logger.error(f"5. 解析失败: {error_msg}", exc_info=True)
+        
+        # 启动后台解析线程
+        logger.info(f"6. 启动后台解析线程...")
+        parse_thread = threading.Thread(target=parse_in_background)
+        parse_thread.daemon = True
+        parse_thread.start()
+        logger.info(f"7. 后台解析线程已启动，继续用户请求")
+        
+        return response
+##
 # agreements/views.py 中的 AgreementListView
 def get_context_data(self, **kwargs):
     context = super().get_context_data(**kwargs)
