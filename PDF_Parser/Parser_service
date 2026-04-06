@@ -344,16 +344,132 @@ def parse_agreement_pdf(agreement_id: int) -> bool:
 
 
 def parse_agreement_pdf_sync(agreement_id: int) -> bool:
-    """
-    同步解析PDF（直接调用，不通过异步任务）
+    """同步解析PDF文件 - 增强日志版本"""
+    print(f"\n{'='*60}")
+    print(f"[parse_service] 开始解析协议 {agreement_id}")
     
-    Args:
-        agreement_id: AgreementPDF对象的ID
+    try:
+        from ..models import AgreementPDF, ParsingLog
         
-    Returns:
-        bool: 解析是否成功
-    """
-    return parse_agreement_pdf(agreement_id)
+        # 1. 获取协议
+        print(f"[parse_service] 1. 从数据库获取协议 {agreement_id}")
+        agreement = AgreementPDF.objects.get(id=agreement_id)
+        print(f"[parse_service]   协议信息: {agreement.file_name}, 状态: {agreement.parsing_status}")
+        
+        # 2. 更新状态为解析中
+        print(f"[parse_service] 2. 更新状态为 'parsing'")
+        agreement.parsing_status = 'parsing'
+        agreement.save(update_fields=['parsing_status'])
+        
+        # 3. 获取文件路径
+        print(f"[parse_service] 3. 获取文件路径")
+        pdf_path = agreement.original_file.path
+        print(f"[parse_service]   原始路径: {pdf_path}")
+        
+        # 修复路径
+        pdf_path = os.path.abspath(pdf_path)
+        print(f"[parse_service]   绝对路径: {pdf_path}")
+        print(f"[parse_service]   文件存在: {os.path.exists(pdf_path)}")
+        
+        if not os.path.exists(pdf_path):
+            print(f"[parse_service]   ✗ 文件不存在！")
+            agreement.parsing_status = 'error'
+            agreement.save(update_fields=['parsing_status'])
+            return False
+        
+        # 4. 导入解析器
+        print(f"[parse_service] 4. 导入解析器")
+        try:
+            from ..parsers.fast_adapter import FastParserAdapter
+            print(f"[parse_service]   FastParserAdapter 导入成功")
+        except ImportError as e:
+            print(f"[parse_service]   ✗ FastParserAdapter 导入失败: {e}")
+            # 尝试直接导入FastLoanAgreementParser
+            try:
+                from ..parsers.fast_loan_parser import FastLoanAgreementParser
+                print(f"[parse_service]   FastLoanAgreementParser 导入成功")
+                # 创建简单适配器
+                class SimpleAdapter:
+                    def parse_pdf(self, path):
+                        parser = FastLoanAgreementParser()
+                        return parser.parse(path)
+                parser = SimpleAdapter()
+            except ImportError as e2:
+                print(f"[parse_service]   ✗ FastLoanAgreementParser 也导入失败: {e2}")
+                agreement.parsing_status = 'error'
+                agreement.save(update_fields=['parsing_status'])
+                return False
+        else:
+            parser = FastParserAdapter()
+            print(f"[parse_service]   解析器实例创建成功")
+        
+        # 5. 解析PDF
+        print(f"[parse_service] 5. 开始解析PDF")
+        try:
+            result = parser.parse_pdf(pdf_path)
+            print(f"[parse_service]   解析结果: {result}")
+        except Exception as e:
+            print(f"[parse_service]   ✗ 解析过程中异常: {e}")
+            import traceback
+            traceback.print_exc()
+            agreement.parsing_status = 'error'
+            agreement.save(update_fields=['parsing_status'])
+            return False
+        
+        # 6. 处理解析结果
+        print(f"[parse_service] 6. 处理解析结果")
+        print(f"[parse_service]   成功: {result.get('success')}")
+        print(f"[parse_service]   错误信息: {result.get('error_message')}")
+        
+        if result.get('success'):
+            # 提取数据
+            borrower_name = result.get('borrower_name', '')
+            facility_amount = result.get('facility_amount')
+            currency = result.get('currency', 'HKD')
+            agreement_date = result.get('agreement_date')
+            
+            print(f"[parse_service]   提取的数据:")
+            print(f"[parse_service]     借款人: {borrower_name}")
+            print(f"[parse_service]     金额: {facility_amount}")
+            print(f"[parse_service]     货币: {currency}")
+            print(f"[parse_service]     日期: {agreement_date}")
+            
+            # 保存到数据库
+            print(f"[parse_service] 7. 保存到数据库")
+            agreement.borrower_name = borrower_name
+            agreement.facility_amount = facility_amount
+            agreement.currency = currency
+            agreement.agreement_date = agreement_date
+            agreement.parsing_status = 'parsed'
+            agreement.parsed_data = result
+            
+            with transaction.atomic():
+                agreement.save()
+            
+            print(f"[parse_service]   ✓ 保存成功")
+            return True
+        else:
+            print(f"[parse_service]   ✗ 解析失败: {result.get('error_message')}")
+            agreement.parsing_status = 'error'
+            agreement.save(update_fields=['parsing_status'])
+            return False
+            
+    except Exception as e:
+        print(f"[parse_service] ✗ 解析过程异常: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # 尝试保存错误状态
+        try:
+            agreement.parsing_status = 'error'
+            agreement.save(update_fields=['parsing_status'])
+        except:
+            pass
+        
+        return False
+    finally:
+        print(f"[parse_service] 解析完成")
+        print(f"{'='*60}\n")
 
 
 # 为Django视图提供的便捷函数
