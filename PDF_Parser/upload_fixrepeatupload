@@ -1,0 +1,166 @@
+<!-- agreements/templates/agreements/upload.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>上传协议 - 贷款协议解析系统</title>
+    <style>
+        .upload-form {
+            max-width: 500px;
+            margin: 50px auto;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        .upload-form h1 {
+            text-align: center;
+            color: #333;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+        .file-input-wrapper {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+        }
+        .file-input-wrapper input[type=file] {
+            font-size: 100px;
+            position: absolute;
+            left: 0;
+            top: 0;
+            opacity: 0;
+        }
+        .file-input-button {
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .file-name {
+            margin-left: 10px;
+            color: #666;
+        }
+        .submit-btn {
+            width: 100%;
+            padding: 12px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        .submit-btn:hover {
+            background-color: #218838;
+        }
+        .messages {
+            margin-top: 20px;
+        }
+        .alert {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .alert-success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .alert-error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+<body>
+    <div class="upload-form">
+        <h1>📄 上传贷款协议</h1>
+        
+        <form method="post" enctype="multipart/form-data" id="uploadForm">
+            {% csrf_token %}
+            
+            <!-- 手动渲染文件字段 -->
+            <div class="form-group">
+                <label for="id_original_file">选择PDF文件:</label>
+                <div class="file-input-wrapper">
+                    <button type="button" class="file-input-button" onclick="document.getElementById('id_original_file').click()">
+                        浏览文件
+                    </button>
+                    <input type="file" 
+                           name="original_file" 
+                           id="id_original_file" 
+                           accept=".pdf" 
+                           onchange="updateFileName(this)"
+                           style="display: none;">
+                    <span id="fileName" class="file-name">未选择文件</span>
+                </div>
+                {% if form.original_file.errors %}
+                <div style="color: red; margin-top: 5px;">
+                    {{ form.original_file.errors }}
+                </div>
+                {% endif %}
+            </div>
+            
+            <button type="submit" class="submit-btn">上传并解析</button>
+        </form>
+        
+        {% if messages %}
+        <div class="messages">
+            {% for message in messages %}
+            <div class="alert alert-{{ message.tags }}">
+                {{ message }}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+    
+    <script>
+        // 显示选择的文件名
+        function updateFileName(input) {
+            if (input.files.length > 0) {
+                document.getElementById('fileName').textContent = input.files[0].name;
+                document.getElementById('fileName').style.color = '#28a745';
+            } else {
+                document.getElementById('fileName').textContent = '未选择文件';
+                document.getElementById('fileName').style.color = '#666';
+            }
+        }
+        
+        // 防止重复提交
+        document.getElementById('uploadForm').addEventListener('submit', function(e) {
+            var submitBtn = this.querySelector('button[type="submit"]');
+            var fileInput = document.getElementById('id_original_file');
+            
+            // 检查是否选择了文件
+            if (!fileInput.files || fileInput.files.length === 0) {
+                e.preventDefault();
+                alert('请先选择PDF文件');
+                return false;
+            }
+            
+            // 防止重复点击
+            submitBtn.disabled = true;
+            submitBtn.textContent = '上传中...';
+            
+            return true;
+        });
+        
+        // 调试：显示表单字段
+        console.log("表单字段:", {
+            fileInput: document.getElementById('id_original_file'),
+            form: document.getElementById('uploadForm')
+        });
+    </script>
+</body>
+</html>
