@@ -1,0 +1,81 @@
+<!-- templates/agreements/match_results.html -->
+<div class="match-results">
+    <h3>Matching Results for: <strong>{{ agreement.borrower_name }}</strong></h3>
+    
+    <div class="agreement-summary">
+        <p>Agreement Amount: {{ agreement.facility_amount|floatformat:2 }} {{ agreement.currency }}</p>
+        <p>Date: {{ agreement.agreement_date|date:"Y-m-d" }}</p>
+    </div>
+    
+    <div class="customer-matches">
+        {% for match in matches %}
+        <div class="match-card" data-score="{{ match.score }}">
+            <div class="match-header">
+                <span class="score-badge">{{ match.score }}% match</span>
+                <h4>{{ match.customer.name }}</h4>
+                <small>Customer ID: {{ match.customer.customer_id }}</small>
+            </div>
+            
+            <div class="customer-details">
+                <p>Group ID: {{ match.customer.master_group_id|default:"N/A" }}</p>
+                <p>Contact: {{ match.customer.contact|default:"N/A" }}</p>
+            </div>
+            
+            {% if match.applications %}
+            <div class="applications">
+                <h5>Recent Applications:</h5>
+                <ul>
+                    {% for app in match.applications %}
+                    <li>
+                        {{ app.application_id }} - 
+                        {{ app.requested_amount }} {{ app.currency }} - 
+                        {{ app.purpose|truncatechars:30 }}
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+            
+            <button class="select-btn" 
+                    data-customer-id="{{ match.customer.id }}"
+                    data-agreement-id="{{ agreement.id }}">
+                Select This Customer
+            </button>
+        </div>
+        {% empty %}
+        <p class="no-matches">No potential matches found</p>
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+document.querySelectorAll('.select-btn').forEach(btn => {
+    btn.addEventListener('click', async function() {
+        const customerId = this.dataset.customerId;
+        const agreementId = this.dataset.agreementId;
+        
+        try {
+            const response = await fetch(`/api/agreements/${agreementId}/link/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify({
+                    customer_id: customerId
+                })
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                alert('Successfully linked!');
+                window.location.href = `/agreements/detail/${agreementId}/`;
+            } else {
+                alert('Error: ' + result.error);
+            }
+        } catch (error) {
+            alert('Network error');
+        }
+    });
+});
+</script>
