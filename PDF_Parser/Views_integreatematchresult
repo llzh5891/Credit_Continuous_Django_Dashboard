@@ -1,33 +1,86 @@
 # agreements/views.py
-from django.views.decorators.http import require_http_methods
+import json
+from django.shortcuts import render, get_object_or_404
 from django.http import JsonResponse
+from django.views.decorators.http import require_http_methods
+from django.contrib.auth.decorators import login_required
+from .models import AgreementPDF
+from .services import find_potential_customer_matches, link_agreement_to_customer
+import logging
 
-@require_http_methods(["GET"])
+logger = logging.getLogger(__name__)
+
+@login_required
 def match_customer(request, agreement_id):
-    """Endpoint for frontend to get matching results"""
-    results = find_potential_customer_matches(agreement_id)
-    if 'error' in results:
-        return JsonResponse({'error': results['error']}, status=400)
-    return JsonResponse(results)
-
-@require_http_methods(["POST"]) 
-def link_customer(request, agreement_id):
-    """Endpoint to link agreement to selected customer"""
+    """
+    显示客户匹配结果页面
+    """
     try:
-        agreement = AgreementPDF.objects.get(id=agreement_id)
-        customer_id = request.POST.get('customer_id')
+        # 获取协议对象
+        agreement = get_object_or_404(AgreementPDF, id=agreement_id)
         
-        customer = Customer.objects.get(id=customer_id)
-        agreement.customer = customer
-        agreement.save()
+        # 获取匹配结果
+        results = find_potential_customer_matches(agreement_id)
+        
+        # 如果服务返回错误
+        if 'error' in results:
+            logger.error(f"Match error for agreement {agreement_id}: {results['error']}")
+            return render(request, 'agreements/match_results.html', {
+                'error': results['error'],
+                'agreement': agreement
+            })
+        
+        # 准备上下文数据
+        context = {
+            'agreement': results['agreement'],
+            'matches': results['matches'],
+            'normalized_borrower': results.get('normalized_borrower', ''),
+            'json_response': json.dumps(results, indent=2, ensure_ascii=False)
+        }
+        
+        return render(request, 'agreements/match_results.html', context)
+        
+    except Exception as e:
+        logger.exception(f"Error in match_customer view: {str(e)}")
+        return render(request, 'agreements/match_results.html', {
+            'error': f"系统错误: {str(e)}",
+            'agreement_id': agreement_id
+        })
+
+@login_required
+@require_http_methods(["POST"])
+def link_customer(request, agreement_id):
+    """
+    处理客户关联请求
+    """
+    try:
+        customer_id = request.POST.get('customer_id')
+        if not customer_id:
+            return JsonResponse({
+                'success': False,
+                'message': 'Missing customer ID'
+            }, status=400)
+        
+        success, message = link_agreement_to_customer(agreement_id, customer_id)
         
         return JsonResponse({
-            'success': True,
-            'customer_name': customer.name
+            'success': success,
+            'message': message
         })
         
     except Exception as e:
+        logger.error(f"Link error: {str(e)}")
         return JsonResponse({
             'success': False,
-            'error': str(e)
-        }, status=400)
+            'message': str(e)
+        }, status=500)
+
+@login_required
+def agreement_detail(request, agreement_id):
+    """
+    协议详情页面
+    """
+    agreement = get_object_or_404(AgreementPDF, id=agreement_id)
+    return render(request, 'agreements/agreement_detail.html', {
+        'agreement': agreement
+    })
