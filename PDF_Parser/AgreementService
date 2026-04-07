@@ -1,0 +1,141 @@
+# agreements/services.py
+import re
+from fuzzywuzzy import fuzz, process
+from django.db.models import Q
+from .models import AgreementPDF
+from credit.models import Customer, CreditApplication
+import logging
+
+logger = logging.getLogger(__name__)
+
+def normalize_name(name):
+    """
+    标准化名称以进行更好的匹配：
+    1. 转换为小写
+    2. 移除常见公司后缀
+    3. 移除特殊字符
+    """
+    if not name:
+        return ""
+    
+    # 转换为小写
+    name = name.lower()
+    
+    # 移除常见公司后缀
+    suffixes = [
+        "ltd", "limited", "inc", "incorporated", "llc", "plc", 
+        "co", "company", "corp", "corporation", "group", "holdings",
+        "hk", "hong kong", "china", "international", "asia"
+    ]
+    
+    # 使用正则表达式移除后缀
+    pattern = r"\b(" + "|".join(suffixes) + r")\b\.?"
+    name = re.sub(pattern, "", name)
+    
+    # 移除特殊字符和多余空格
+    name = re.sub(r'[^\w\s]', '', name)
+    name = re.sub(r'\s+', ' ', name).strip()
+    
+    return name
+
+def find_potential_customer_matches(agreement_id):
+    """
+    改进的模糊匹配逻辑：
+    1. 标准化名称处理
+    2. 同时匹配客户名称和主组名称
+    3. 智能处理公司后缀变体
+    """
+    try:
+        agreement = AgreementPDF.objects.get(id=agreement_id)
+        borrower_name = agreement.borrower_name
+        
+        if not borrower_name:
+            return {'error': 'Borrower name not found in agreement'}
+        
+        # 标准化借款人名称
+        normalized_borrower = normalize_name(borrower_name)
+        
+        # 获取所有客户
+        all_customers = Customer.objects.all()
+        
+        # 为每个客户计算匹配分数
+        matches = []
+        for customer in all_customers:
+            # 标准化客户名称和主组名称
+            norm_customer_name = normalize_name(customer.name)
+            norm_master_group = normalize_name(customer.master_group_id)
+            
+            # 计算名称匹配分数
+            name_score = fuzz.token_set_ratio(normalized_borrower, norm_customer_name)
+            
+            # 计算主组名称匹配分数
+            group_score = fuzz.token_set_ratio(normalized_borrower, norm_master_group) if norm_master_group else 0
+            
+            # 取最高分数作为匹配分数
+            score = max(name_score, group_score)
+            
+            # 只考虑分数>60的匹配
+            if score > 60:
+                matches.append({
+                    'customer': _serialize_customer(customer),
+                    'score': score,
+                    'applications': _get_customer_applications(customer.id),
+                    'match_type': "Name" if name_score >= group_score else "Group ID"
+                })
+        
+        # 按分数降序排序
+        matches.sort(key=lambda x: x['score'], reverse=True)
+        
+        return {
+            'agreement': _serialize_agreement(agreement),
+            'matches': matches[:20]  # 最多返回20个匹配
+        }
+        
+    except Exception as e:
+        logger.error(f"Matching error for agreement {agreement_id}: {str(e)}")
+        return {'error': str(e)}
+
+def _serialize_customer(customer):
+    """序列化客户数据"""
+    return {
+        'id': customer.id,
+        'name': customer.name,
+        'customer_id': customer.customer_id,
+        'master_group_id': customer.master_group_id,
+        'contact': customer.contact_number,
+        'id_number': getattr(customer, 'id_number', ''),
+        'address': getattr(customer, 'address', '')
+    }
+
+def _get_customer_applications(customer_id, limit=5):
+    """获取客户最近的申请"""
+    return list(
+        CreditApplication.objects
+        .filter(customer_id=customer_id)
+        .order_by('-created_at')
+        .values('application_id', 'requested_amount', 'currency', 'purpose')[:limit]
+    )
+
+def _serialize_agreement(agreement):
+    """序列化协议数据"""
+    return {
+        'id': agreement.id,
+        'borrower_name': agreement.borrower_name,
+        'facility_amount': str(agreement.facility_amount),
+        'currency': agreement.currency,
+        'agreement_date': agreement.agreement_date.strftime('%Y-%m-%d') if agreement.agreement_date else None
+    }
+
+def link_agreement_to_customer(agreement_id, customer_id):
+    """关联协议到客户"""
+    try:
+        agreement = AgreementPDF.objects.get(id=agreement_id)
+        customer = Customer.objects.get(id=customer_id)
+        
+        agreement.customer = customer
+        agreement.save()
+        
+        return True, f"Successfully linked to customer {customer.name}"
+    except Exception as e:
+        logger.error(f"Linking failed: {str(e)}")
+        return False, str(e)
