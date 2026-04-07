@@ -1,3 +1,63 @@
+def find_potential_customer_matches(agreement_id):
+    try:
+        agreement = AgreementPDF.objects.get(id=agreement_id)
+        borrower_name = agreement.borrower_name
+        
+        if not borrower_name:
+            return {'error': 'Borrower name not found in agreement'}
+        
+        normalized_borrower = normalize_name(borrower_name)
+        all_customers = Customer.objects.all()
+        
+        matches = []
+        for customer in all_customers:
+            norm_customer_name = normalize_name(customer.name)
+            norm_master_group = normalize_name(customer.master_group_id) if customer.master_group_id else ""
+            
+            name_score = fuzz.token_set_ratio(normalized_borrower, norm_customer_name)
+            group_score = fuzz.token_set_ratio(normalized_borrower, norm_master_group) if norm_master_group else 0
+            
+            # 关键修复点1：确保100分匹配必定入选
+            if name_score == 100 or group_score == 100:
+                matches.append({
+                    'customer': _serialize_customer(customer),
+                    'score': 100,  # 强制设置为满分
+                    'applications': _get_customer_applications(customer.id),
+                    'match_type': "Exact Name" if name_score == 100 else "Exact Group",
+                    'comparison_details': {
+                        'borrower_original': borrower_name,
+                        'borrower_normalized': normalized_borrower,
+                        'customer_original': customer.name,
+                        'customer_normalized': norm_customer_name,
+                        'master_group_original': customer.master_group_id,
+                        'master_group_normalized': norm_master_group,
+                        'name_score': name_score,
+                        'group_score': group_score
+                    }
+                })
+                continue  # 跳过后续逻辑
+                
+            # 原有逻辑处理非100分的情况
+            score = max(name_score, group_score)
+            if score > 40:
+                matches.append({
+                    # ... 保持原有结构 ...
+                })
+        
+        # 关键修复点2：添加调试日志
+        logger.info(f"Found {len(matches)} matches for '{borrower_name}'")
+        for match in matches[:3]:  # 打印前3个匹配项详情
+            logger.info(f"Match: {match['customer']['name']} (Score: {match['score']})")
+        
+        return {
+            'agreement': _serialize_agreement(agreement),
+            'matches': sorted(matches, key=lambda x: x['score'], reverse=True)[:20],
+            'normalized_borrower': normalized_borrower
+        }
+
+
+
+
 # agreements/services.py
 import re
 import logging
