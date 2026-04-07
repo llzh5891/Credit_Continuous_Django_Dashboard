@@ -1,0 +1,33 @@
+# agreements/views.py
+from django.views.decorators.http import require_http_methods
+from django.http import JsonResponse
+
+@require_http_methods(["GET"])
+def match_customer(request, agreement_id):
+    """Endpoint for frontend to get matching results"""
+    results = find_potential_customer_matches(agreement_id)
+    if 'error' in results:
+        return JsonResponse({'error': results['error']}, status=400)
+    return JsonResponse(results)
+
+@require_http_methods(["POST"]) 
+def link_customer(request, agreement_id):
+    """Endpoint to link agreement to selected customer"""
+    try:
+        agreement = AgreementPDF.objects.get(id=agreement_id)
+        customer_id = request.POST.get('customer_id')
+        
+        customer = Customer.objects.get(id=customer_id)
+        agreement.customer = customer
+        agreement.save()
+        
+        return JsonResponse({
+            'success': True,
+            'customer_name': customer.name
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=400)
