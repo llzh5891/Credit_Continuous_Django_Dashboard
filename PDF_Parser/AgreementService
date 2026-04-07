@@ -1,15 +1,15 @@
 # agreements/services.py
 import re
+import logging
 from fuzzywuzzy import fuzz
 from django.db.models import Q
 from .models import AgreementPDF
 from credit.models import Customer, CreditApplication
-import logging
 
 logger = logging.getLogger(__name__)
 
 def normalize_name(name):
-    """更详细的名称标准化函数"""
+    """标准化名称以进行更好的匹配"""
     if not name:
         return ""
     
@@ -34,7 +34,7 @@ def normalize_name(name):
     return name
 
 def find_potential_customer_matches(agreement_id):
-    """返回详细的匹配对比信息"""
+    """查找可能的客户匹配"""
     try:
         agreement = AgreementPDF.objects.get(id=agreement_id)
         borrower_name = agreement.borrower_name
@@ -71,7 +71,6 @@ def find_potential_customer_matches(agreement_id):
                     'score': score,
                     'applications': _get_customer_applications(customer.id),
                     'match_type': "Name" if name_score >= group_score else "Group ID",
-                    # 添加详细的对比信息
                     'comparison_details': {
                         'borrower_original': borrower_name,
                         'borrower_normalized': normalized_borrower,
@@ -90,11 +89,64 @@ def find_potential_customer_matches(agreement_id):
         return {
             'agreement': _serialize_agreement(agreement),
             'matches': matches[:20],  # 最多返回20个匹配
-            'normalized_borrower': normalized_borrower  # 添加标准化后的借款人名称
+            'normalized_borrower': normalized_borrower
         }
         
+    except AgreementPDF.DoesNotExist:
+        return {'error': f'Agreement with ID {agreement_id} not found'}
     except Exception as e:
         logger.error(f"Matching error for agreement {agreement_id}: {str(e)}")
         return {'error': str(e)}
 
-# 其他函数保持不变...
+def _serialize_customer(customer):
+    """序列化客户数据"""
+    return {
+        'id': customer.id,
+        'name': customer.name,
+        'customer_id': customer.customer_id,
+        'master_group_id': customer.master_group_id,
+        'contact': customer.contact_number,
+        'id_number': getattr(customer, 'id_number', ''),
+        'address': getattr(customer, 'address', '')
+    }
+
+def _get_customer_applications(customer_id, limit=5):
+    """获取客户最近的申请"""
+    try:
+        return list(
+            CreditApplication.objects
+            .filter(customer_id=customer_id)
+            .order_by('-created_at')
+            .values('application_id', 'requested_amount', 'currency', 'purpose')[:limit]
+        )
+    except Exception as e:
+        logger.error(f"Error getting applications for customer {customer_id}: {str(e)}")
+        return []
+
+def _serialize_agreement(agreement):
+    """序列化协议数据"""
+    return {
+        'id': agreement.id,
+        'borrower_name': agreement.borrower_name,
+        'facility_amount': str(agreement.facility_amount),
+        'currency': agreement.currency,
+        'agreement_date': agreement.agreement_date.strftime('%Y-%m-%d') if agreement.agreement_date else None
+    }
+
+def link_agreement_to_customer(agreement_id, customer_id):
+    """关联协议到客户"""
+    try:
+        agreement = AgreementPDF.objects.get(id=agreement_id)
+        customer = Customer.objects.get(id=customer_id)
+        
+        agreement.customer = customer
+        agreement.save()
+        
+        return True, f"Successfully linked to customer {customer.name}"
+    except AgreementPDF.DoesNotExist:
+        return False, f"Agreement with ID {agreement_id} not found"
+    except Customer.DoesNotExist:
+        return False, f"Customer with ID {customer_id} not found"
+    except Exception as e:
+        logger.error(f"Linking failed: {str(e)}")
+        return False, str(e)
