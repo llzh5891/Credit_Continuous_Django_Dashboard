@@ -1,11 +1,11 @@
-<!-- agreements/templates/agreements/upload.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Upload Loan Agreement - Loan Agreement Parser</title>
+    <title>Upload Loan Agreement - Bank Credit System</title>
     <style>
+        /* 全局样式 */
         * {
             margin: 0;
             padding: 0;
@@ -13,530 +13,636 @@
         }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background-color: #f5f7fa;
-            color: #333;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             line-height: 1.6;
+            color: #333;
+            background: #f5f7fa;
+            padding: 20px;
         }
         
         .container {
             max-width: 800px;
             margin: 0 auto;
-            padding: 20px;
         }
         
+        /* 头部样式 */
         .header {
-            text-align: center;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
             margin-bottom: 30px;
-            padding-bottom: 20px;
-            border-bottom: 1px solid #e1e5eb;
         }
         
-        .header h1 {
-            color: #2c3e50;
+        .page-title {
             font-size: 24px;
-            margin-bottom: 10px;
-        }
-        
-        .header p {
-            color: #7f8c8d;
-            font-size: 16px;
+            font-weight: 600;
+            color: #1a365d;
         }
         
         .back-link {
-            display: inline-block;
-            margin-bottom: 20px;
-            color: #3498db;
+            color: #4a5568;
             text-decoration: none;
+            padding: 8px 16px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
             font-size: 14px;
         }
         
         .back-link:hover {
-            text-decoration: underline;
+            background: #f7fafc;
         }
         
-        .requirements-card {
+        /* 卡片样式 */
+        .card {
             background: white;
             border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            border-left: 4px solid #3498db;
+            margin-bottom: 20px;
+            overflow: hidden;
         }
         
-        .requirements-card h2 {
-            color: #2c3e50;
+        .card-header {
+            padding: 20px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        
+        .card-title {
             font-size: 18px;
-            margin-bottom: 15px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
+            font-weight: 600;
+            color: #2d3748;
         }
         
-        .requirements-grid {
+        .card-body {
+            padding: 20px;
+        }
+        
+        /* 需求列表样式 */
+        .requirements-list {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
             gap: 20px;
         }
         
-        .requirements-section h3 {
-            font-size: 15px;
+        .requirement-section h4 {
+            font-size: 16px;
+            font-weight: 600;
             margin-bottom: 10px;
-            color: #27ae60;
+            color: #2d3748;
         }
         
-        .requirements-section.warning h3 {
-            color: #e74c3c;
+        .supported-section h4 {
+            color: #38a169;
         }
         
-        .requirements-list {
+        .notes-section h4 {
+            color: #e53e3e;
+        }
+        
+        .requirement-list {
             list-style: none;
         }
         
-        .requirements-list li {
+        .requirement-list li {
             margin-bottom: 8px;
             font-size: 14px;
-            color: #555;
-            display: flex;
-            align-items: flex-start;
-            gap: 8px;
+            color: #4a5568;
         }
         
-        .requirements-list li:before {
+        .requirement-list li:before {
             content: "•";
-            color: #3498db;
-            font-weight: bold;
+            color: #cbd5e0;
+            margin-right: 8px;
         }
         
-        .upload-card {
-            background: white;
-            border-radius: 8px;
-            padding: 30px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-        }
-        
+        /* 上传区域样式 */
         .upload-area {
-            border: 2px dashed #bdc3c7;
+            border: 2px dashed #cbd5e0;
             border-radius: 8px;
-            padding: 40px 20px;
             text-align: center;
             cursor: pointer;
             transition: all 0.3s ease;
-            margin-bottom: 20px;
+            background: #f7fafc;
         }
         
         .upload-area:hover {
-            border-color: #3498db;
-            background-color: #f8fafc;
+            border-color: #4299e1;
+            background: #ebf8ff;
         }
         
         .upload-area.dragover {
-            border-color: #2ecc71;
-            background-color: #f0f9f0;
+            border-color: #38a169;
+            background: #f0fff4;
         }
         
         .upload-icon {
             font-size: 48px;
-            color: #7f8c8d;
-            margin-bottom: 15px;
+            color: #a0aec0;
+            margin-bottom: 16px;
         }
         
-        .upload-area h3 {
-            color: #2c3e50;
-            margin-bottom: 10px;
-        }
-        
-        .upload-area p {
-            color: #7f8c8d;
-            font-size: 14px;
-        }
-        
-        .browse-btn {
-            display: inline-block;
-            background: #3498db;
-            color: white;
-            padding: 12px 24px;
-            border-radius: 6px;
-            text-decoration: none;
+        .upload-text {
+            font-size: 18px;
             font-weight: 500;
-            margin-top: 15px;
+            color: #4a5568;
+            margin-bottom: 8px;
+        }
+        
+        .upload-subtext {
+            font-size: 14px;
+            color: #a0aec0;
+        }
+        
+        .file-button {
+            display: inline-block;
+            background: #4299e1;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 6px;
             border: none;
             cursor: pointer;
+            font-size: 16px;
+            margin: 20px 0;
             transition: background 0.3s ease;
         }
         
-        .browse-btn:hover {
-            background: #2980b9;
+        .file-button:hover {
+            background: #3182ce;
         }
         
+        /* 文件信息样式 */
         .file-info {
-            background: #f8f9fa;
-            border-radius: 6px;
-            padding: 15px;
-            margin-bottom: 20px;
             display: none;
-        }
-        
-        .file-info.show {
-            display: block;
-            animation: fadeIn 0.3s ease;
+            padding: 16px;
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            margin-top: 20px;
         }
         
         .file-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
         }
         
         .file-name {
-            font-weight: 500;
-            color: #2c3e50;
+            font-weight: 600;
+            color: #2d3748;
         }
         
-        .file-details {
-            font-size: 13px;
-            color: #7f8c8d;
+        .file-size {
+            font-size: 14px;
+            color: #718096;
         }
         
-        .clear-btn {
-            background: #e74c3c;
-            color: white;
-            border: none;
-            padding: 6px 12px;
+        .clear-button {
+            background: none;
+            border: 1px solid #e53e3e;
+            color: #e53e3e;
+            padding: 4px 12px;
             border-radius: 4px;
-            font-size: 12px;
             cursor: pointer;
+            font-size: 14px;
         }
         
-        .clear-btn:hover {
-            background: #c0392b;
+        .clear-button:hover {
+            background: #fed7d7;
         }
         
-        .progress-bar {
-            height: 4px;
-            background: #ecf0f1;
-            border-radius: 2px;
-            overflow: hidden;
-            margin-top: 10px;
-        }
-        
-        .progress {
-            height: 100%;
-            background: #2ecc71;
-            width: 0%;
-            transition: width 0.3s ease;
-        }
-        
-        .submit-btn {
+        /* 提交按钮 */
+        .submit-button {
             width: 100%;
-            background: #2ecc71;
+            padding: 16px;
+            background: #38a169;
             color: white;
             border: none;
-            padding: 15px;
             border-radius: 6px;
             font-size: 16px;
-            font-weight: 500;
+            font-weight: 600;
             cursor: pointer;
             transition: background 0.3s ease;
         }
         
-        .submit-btn:hover:not(:disabled) {
-            background: #27ae60;
+        .submit-button:hover {
+            background: #2f855a;
         }
         
-        .submit-btn:disabled {
-            background: #95a5a6;
+        .submit-button:disabled {
+            background: #cbd5e0;
             cursor: not-allowed;
         }
         
-        .recent-uploads {
-            background: white;
-            border-radius: 8px;
-            padding: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        /* 进度条 */
+        .progress {
+            height: 4px;
+            background: #e2e8f0;
+            border-radius: 2px;
+            margin-top: 12px;
+            overflow: hidden;
         }
         
-        .recent-uploads h3 {
-            color: #2c3e50;
-            font-size: 18px;
-            margin-bottom: 15px;
+        .progress-bar {
+            height: 100%;
+            background: #4299e1;
+            width: 0%;
+            transition: width 0.3s ease;
         }
         
-        .upload-list {
+        /* 消息样式 */
+        .message {
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 16px;
+        }
+        
+        .message.success {
+            background: #c6f6d5;
+            color: #22543d;
+            border: 1px solid #9ae6b4;
+        }
+        
+        .message.error {
+            background: #fed7d7;
+            color: #742a2a;
+            border: 1px solid #fc8181;
+        }
+        
+        .message.info {
+            background: #bee3f8;
+            color: #2c5282;
+            border: 1px solid #90cdf4;
+        }
+        
+        /* 最近上传 */
+        .recent-list {
             list-style: none;
         }
         
-        .upload-item {
-            padding: 10px 0;
-            border-bottom: 1px solid #eee;
+        .recent-item {
+            padding: 12px 0;
+            border-bottom: 1px solid #e2e8f0;
         }
         
-        .upload-item:last-child {
+        .recent-item:last-child {
             border-bottom: none;
         }
         
-        .upload-item a {
-            text-decoration: none;
-            color: #2c3e50;
-            display: block;
-        }
-        
-        .upload-item:hover {
-            background: #f8f9fa;
-            padding-left: 10px;
-            border-radius: 4px;
-        }
-        
-        .upload-name {
+        .recent-file {
             font-weight: 500;
-            margin-bottom: 4px;
+            color: #2d3748;
         }
         
-        .upload-meta {
+        .recent-date {
             font-size: 12px;
-            color: #7f8c8d;
+            color: #718096;
         }
         
-        .status-badge {
+        .recent-status {
             display: inline-block;
             padding: 2px 8px;
             border-radius: 12px;
-            font-size: 11px;
+            font-size: 12px;
             font-weight: 500;
-            margin-top: 5px;
         }
         
         .status-parsed {
-            background: #d5f4e6;
-            color: #27ae60;
+            background: #c6f6d5;
+            color: #22543d;
         }
         
         .status-parsing {
-            background: #fff3cd;
-            color: #856404;
+            background: #fefcbf;
+            color: #744210;
         }
         
         .status-error {
-            background: #f8d7da;
-            color: #721c24;
+            background: #fed7d7;
+            color: #742a2a;
         }
         
-        .messages {
-            margin: 20px 0;
-        }
-        
-        .alert {
-            padding: 12px 16px;
-            border-radius: 6px;
-            margin-bottom: 10px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .alert-success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-        
-        .alert-error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-        
-        .alert-info {
-            background: #d1ecf1;
-            color: #0c5460;
-            border: 1px solid #bee5eb;
-        }
-        
-        .no-uploads {
+        /* 页脚 */
+        .footer {
             text-align: center;
-            color: #7f8c8d;
-            padding: 20px;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #e2e8f0;
+            color: #718096;
+            font-size: 14px;
         }
         
-        .hidden {
-            display: none;
-        }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(-10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        .error {
-            color: #e74c3c;
-            font-size: 13px;
-            margin-top: 5px;
-        }
-        
-        .file-input {
-            display: none;
+        /* 响应式 */
+        @media (max-width: 640px) {
+            .header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 16px;
+            }
+            
+            .requirements-list {
+                grid-template-columns: 1fr;
+            }
+            
+            .container {
+                padding: 0;
+            }
+            
+            body {
+                padding: 10px;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <!-- Back to list -->
-        <a href="{% url 'agreement_list' %}" class="back-link">
-            &larr; Back to List
-        </a>
-        
-        <!-- Page header -->
+        <!-- 页面头部 -->
         <div class="header">
-            <h1>📄 Upload Loan Agreement</h1>
-            <p>Upload a PDF loan agreement for automated parsing and analysis</p>
+            <h1 class="page-title">📄 Upload Loan Agreement</h1>
+            <a href="/agreements/" class="back-link">← Back to List</a>
         </div>
         
-        <!-- Requirements -->
-        <div class="requirements-card">
-            <h2>📋 Upload Requirements</h2>
-            <div class="requirements-grid">
-                <div class="requirements-section">
-                    <h3>✅ Supported Files</h3>
-                    <ul class="requirements-list">
-                        <li>PDF document format (.pdf)</li>
-                        <li>Standard loan agreement content</li>
-                        <li>English and Chinese agreements</li>
-                        <li>Machine-readable text (not scanned)</li>
-                    </ul>
-                </div>
-                <div class="requirements-section warning">
-                    <h3>⚠️ Important Notes</h3>
-                    <ul class="requirements-list">
-                        <li>Scanned/Image PDFs not supported</li>
-                        <li>Maximum file size: 10MB</li>
-                        <li>Parsing time: 10-30 seconds</li>
-                        <li>Ensure text is selectable</li>
-                    </ul>
+        <!-- 需求提示卡片 -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Upload Requirements</h2>
+            </div>
+            <div class="card-body">
+                <div class="requirements-list">
+                    <div class="requirement-section supported-section">
+                        <h4>✓ Supported Files</h4>
+                        <ul class="requirement-list">
+                            <li>PDF format documents</li>
+                            <li>Standard loan agreement content</li>
+                            <li>Chinese or English agreements</li>
+                        </ul>
+                    </div>
+                    <div class="requirement-section notes-section">
+                        <h4>⚠️ Notes</h4>
+                        <ul class="requirement-list">
+                            <li>No scanned/image PDFs</li>
+                            <li>Max file size: 10MB</li>
+                            <li>Parsing time: 10-30 seconds</li>
+                        </ul>
+                    </div>
                 </div>
             </div>
         </div>
         
-        <!-- Upload Form -->
-        <div class="upload-card">
-            <form method="post" enctype="multipart/form-data" id="uploadForm">
-                {% csrf_token %}
-                
-                <!-- Drag & Drop Area -->
-                <div class="upload-area" id="dropZone">
-                    <div class="upload-icon">📁</div>
-                    <h3>Drag & Drop your PDF file here</h3>
-                    <p>or</p>
-                    <label for="id_original_file" class="browse-btn">
-                        Browse Files
-                    </label>
-                    <input type="file" 
-                           name="original_file" 
-                           id="id_original_file" 
-                           accept=".pdf" 
-                           class="file-input"
-                           required>
-                    <p>Supports .pdf files up to 10MB</p>
-                </div>
-                
-                <!-- File Info Display -->
-                <div class="file-info" id="fileInfo">
-                    <div class="file-header">
-                        <div>
-                            <div class="file-name" id="fileName">No file selected</div>
-                            <div class="file-details">
-                                <span id="fileSize">0 KB</span> • PDF Document
+        <!-- 上传表单卡片 -->
+        <div class="card">
+            <div class="card-body">
+                <form method="post" enctype="multipart/form-data" id="uploadForm">
+                    {% csrf_token %}
+                    
+                    <!-- 拖放区域 -->
+                    <div class="upload-area" id="dropZone">
+                        <div class="card-body">
+                            <div class="upload-icon">📁</div>
+                            <div class="upload-text">Drag & drop PDF file or</div>
+                            
+                            <label for="id_original_file" class="file-button">
+                                Browse Files
+                            </label>
+                            <input type="file" 
+                                   name="original_file" 
+                                   id="id_original_file" 
+                                   accept=".pdf,.PDF" 
+                                   onchange="updateFileInfo(this)"
+                                   class="d-none"
+                                   required>
+                            
+                            <div class="upload-subtext">
+                                Supports .pdf format, up to 10MB
                             </div>
                         </div>
-                        <button type="button" class="clear-btn" onclick="clearFile()">
-                            Clear
-                        </button>
                     </div>
-                    <div class="progress-bar" id="progressBar" style="display: none;">
-                        <div class="progress" id="progress"></div>
+                    
+                    <!-- 文件信息 -->
+                    <div class="file-info" id="fileInfo">
+                        <div class="file-header">
+                            <div>
+                                <div class="file-name" id="fileName">No file selected</div>
+                                <div class="file-size" id="fileSize">0 KB</div>
+                            </div>
+                            <button type="button" class="clear-button" onclick="clearFile()">
+                                Clear
+                            </button>
+                        </div>
+                        <div class="progress" id="progressBar" style="display: none;">
+                            <div class="progress-bar"></div>
+                        </div>
                     </div>
-                </div>
-                
-                <!-- Submit Button -->
-                <button type="submit" class="submit-btn" id="submitBtn">
-                    Upload & Parse Agreement
-                </button>
-                
-                <!-- Form Errors -->
-                {% if form.original_file.errors %}
-                <div class="error">
-                    {{ form.original_file.errors }}
-                </div>
-                {% endif %}
-            </form>
+                    
+                    <!-- 提交按钮 -->
+                    <button type="submit" class="submit-button" id="submitBtn">
+                        Upload & Parse
+                    </button>
+                </form>
+            </div>
         </div>
         
-        <!-- Messages -->
+        <!-- 消息显示 -->
         {% if messages %}
         <div class="messages">
             {% for message in messages %}
-            <div class="alert alert-{% if message.tags == 'error' %}error{% else %}{{ message.tags|default:'info' }}{% endif %}">
-                {% if message.tags == 'success' %}
-                    ✅
-                {% elif message.tags == 'error' %}
-                    ❌
-                {% else %}
-                    ℹ️
-                {% endif %}
+            <div class="message {{ message.tags|default:'info' }}">
                 {{ message }}
             </div>
             {% endfor %}
         </div>
         {% endif %}
         
-        <!-- Recent Uploads -->
-        <div class="recent-uploads">
-            <h3>📁 Recent Uploads</h3>
-            {% if recent_uploads %}
-            <ul class="upload-list">
-                {% for agreement in recent_uploads|slice:":5" %}
-                <li class="upload-item">
-                    <a href="{% url 'agreement_detail' agreement.id %}">
-                        <div class="upload-name">{{ agreement.file_name|truncatechars:40 }}</div>
-                        <div class="upload-meta">
-                            Uploaded {{ agreement.uploaded_at|date:"M d, Y H:i" }}
-                        </div>
-                        <span class="status-badge status-{{ agreement.parsing_status }}">
-                            {{ agreement.parsing_status|title }}
-                        </span>
-                    </a>
-                </li>
-                {% endfor %}
-            </ul>
-            {% else %}
-            <div class="no-uploads">
-                <p>No recent uploads</p>
+        <!-- 最近上传文件 -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Recent Uploads</h2>
             </div>
-            {% endif %}
+            <div class="card-body">
+                {% if recent_uploads %}
+                <ul class="recent-list">
+                    {% for agreement in recent_uploads|slice:":5" %}
+                    <li class="recent-item">
+                        <div class="file-header">
+                            <div>
+                                <div class="recent-file">📄 {{ agreement.file_name|truncatechars:40 }}</div>
+                                <div class="recent-date">{{ agreement.uploaded_at|date:"Y-m-d H:i" }}</div>
+                            </div>
+                            <span class="recent-status status-{{ agreement.parsing_status }}">
+                                {{ agreement.get_parsing_status_display }}
+                            </span>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <div style="text-align: center; padding: 20px; color: #a0aec0;">
+                    No uploads yet
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- 页脚 -->
+        <div class="footer">
+            <p>Bank Credit Agreement Management System</p>
         </div>
     </div>
 
     <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const dropZone = document.getElementById('dropZone');
-        const fileInput = document.getElementById('id_original_file');
-        const fileInfo = document.getElementById('fileInfo');
-        const submitBtn = document.getElementById('submitBtn');
-        const form = document.getElementById('uploadForm');
-        const fileName = document.getElementById('fileName');
-        const fileSize = document.getElementById('fileSize');
-        const progressBar = document.getElementById('progressBar');
-        const progress = document.getElementById('progress');
-        
-        // Drag & drop functionality
-        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-            dropZone.addEventListener(eventName, preventDefaults, false);
+        document.addEventListener('DOMContentLoaded', function() {
+            const dropZone = document.getElementById('dropZone');
+            const fileInput = document.getElementById('id_original_file');
+            const fileInfo = document.getElementById('fileInfo');
+            const submitBtn = document.getElementById('submitBtn');
+            const form = document.getElementById('uploadForm');
+            
+            // 拖放功能
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, preventDefaults, false);
+            });
+            
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+            
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, highlight, false);
+            });
+            
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, unhighlight, false);
+            });
+            
+            function highlight() {
+                dropZone.classList.add('dragover');
+            }
+            
+            function unhighlight() {
+                dropZone.classList.remove('dragover');
+            }
+            
+            dropZone.addEventListener('drop', handleDrop, false);
+            
+            function handleDrop(e) {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                
+                if (files.length > 0) {
+                    fileInput.files = files;
+                    updateFileInfo(fileInput);
+                }
+            }
+            
+            // 点击整个区域触发文件选择
+            dropZone.addEventListener('click', function() {
+                fileInput.click();
+            });
+            
+            // 表单提交处理
+            form.addEventListener('submit', function(e) {
+                if (!fileInput.files || fileInput.files.length === 0) {
+                    e.preventDefault();
+                    showMessage('Please select a PDF file first', 'error');
+                    return false;
+                }
+                
+                const file = fileInput.files[0];
+                
+                // 验证文件类型
+                if (!file.name.toLowerCase().endsWith('.pdf')) {
+                    e.preventDefault();
+                    showMessage('Please select a PDF file', 'error');
+                    return false;
+                }
+                
+                // 验证文件大小
+                if (file.size > 10 * 1024 * 1024) {
+                    e.preventDefault();
+                    showMessage('File size must be less than 10MB', 'error');
+                    return false;
+                }
+                
+                // 禁用按钮
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Uploading...';
+                
+                // 显示进度条
+                const progressBar = fileInfo.querySelector('.progress-bar');
+                fileInfo.querySelector('.progress').style.display = 'block';
+                
+                // 模拟进度
+                let progress = 0;
+                const interval = setInterval(() => {
+                    progress += 10;
+                    progressBar.style.width = progress + '%';
+                    
+                    if (progress >= 90) {
+                        clearInterval(interval);
+                    }
+                }, 200);
+                
+                return true;
+            });
+            
+            // 页面加载时检查是否有现有文件
+            if (fileInput.files.length > 0) {
+                updateFileInfo(fileInput);
+            }
         });
         
-        function preventDefaults(e) {
-            e.preventDefault();
-            e.stopPropagation();
+        // 更新文件信息
+        function updateFileInfo(input) {
+            const fileInfo = document.getElementById('fileInfo');
+            const fileName = document.getElementById('fileName');
+            const fileSize = document.getElementById('fileSize');
+            
+            if (input.files.length > 0) {
+                const file = input.files[0];
+                fileName.textContent = file.name;
+                fileSize.textContent = formatFileSize(file.size);
+                fileInfo.style.display = 'block';
+                
+                showMessage('File selected, click "Upload & Parse" to continue', 'success');
+            } else {
+                fileInfo.style.display = 'none';
+            }
         }
         
-        ['
+        // 清除文件
+        function clearFile() {
+            const fileInput = document.getElementById('id_original_file');
+            fileInput.value = '';
+            document.getElementById('fileInfo').style.display = 'none';
+            showMessage('File selection cleared', 'info');
+        }
+        
+        // 格式化文件大小
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        // 显示消息
+        function showMessage(text, type) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.textContent = text;
+            messageDiv.style.position = 'fixed';
+            messageDiv.style.top = '20px';
+            messageDiv.style.right = '20px';
+            messageDiv.style.zIndex = '1000';
+            messageDiv.style.maxWidth = '300px';
+            
+            document.body.appendChild(messageDiv);
+            
+            setTimeout(() => {
+                messageDiv.remove();
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
