@@ -7,33 +7,57 @@
         <p>Date: {{ agreement.agreement_date|date:"Y-m-d" }}</p>
     </div>
     
+    {% if matches %}
+    <div class="match-stats">
+        Found {{ matches|length }} potential matches
+    </div>
+    
     <div class="customer-matches">
         {% for match in matches %}
-        <div class="match-card" data-score="{{ match.score }}">
+        <div class="match-card">
             <div class="match-header">
-                <span class="score-badge">{{ match.score }}% match</span>
-                <h4>{{ match.customer.name }}</h4>
-                <small>Customer ID: {{ match.customer.customer_id }}</small>
+                <div class="score-display">
+                    <div class="score-value">{{ match.score }}%</div>
+                    <div class="score-label">Match ({{ match.match_type }})</div>
+                </div>
+                <div class="customer-info">
+                    <h4>{{ match.customer.name }}</h4>
+                    <div class="customer-details">
+                        <span>ID: {{ match.customer.customer_id }}</span>
+                        <span>Group: {{ match.customer.master_group_id|default:"N/A" }}</span>
+                    </div>
+                </div>
             </div>
             
-            <div class="customer-details">
-                <p>Group ID: {{ match.customer.master_group_id|default:"N/A" }}</p>
-                <p>Contact: {{ match.customer.contact|default:"N/A" }}</p>
+            <div class="contact-info">
+                <p><strong>Contact:</strong> {{ match.customer.contact|default:"N/A" }}</p>
+                <p><strong>Address:</strong> {{ match.customer.address|truncatechars:40|default:"N/A" }}</p>
             </div>
             
             {% if match.applications %}
             <div class="applications">
-                <h5>Recent Applications:</h5>
-                <ul>
-                    {% for app in match.applications %}
-                    <li>
-                        {{ app.application_id }} - 
-                        {{ app.requested_amount }} {{ app.currency }} - 
-                        {{ app.purpose|truncatechars:30 }}
-                    </li>
-                    {% endfor %}
-                </ul>
+                <h5>Recent Credit Applications:</h5>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Application ID</th>
+                            <th>Amount</th>
+                            <th>Purpose</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for app in match.applications %}
+                        <tr>
+                            <td>{{ app.application_id }}</td>
+                            <td>{{ app.requested_amount }} {{ app.currency }}</td>
+                            <td>{{ app.purpose|truncatechars:30 }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
+            {% else %}
+            <p class="no-apps">No recent applications found</p>
             {% endif %}
             
             <button class="select-btn" 
@@ -42,40 +66,108 @@
                 Select This Customer
             </button>
         </div>
-        {% empty %}
-        <p class="no-matches">No potential matches found</p>
         {% endfor %}
     </div>
+    {% else %}
+    <div class="no-matches">
+        <p>No potential matches found for "{{ agreement.borrower_name }}"</p>
+        <p>Suggestions:</p>
+        <ul>
+            <li>Check the borrower name spelling in the agreement</li>
+            <li>Try alternative name variations</li>
+            <li>Verify the customer exists in the system</li>
+        </ul>
+    </div>
+    {% endif %}
 </div>
 
+<style>
+.match-card {
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 15px;
+    background: #f9f9f9;
+}
+
+.match-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.score-display {
+    background: #4a90e2;
+    color: white;
+    border-radius: 50%;
+    width: 60px;
+    height: 60px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    margin-right: 15px;
+}
+
+.score-value {
+    font-size: 18px;
+    font-weight: bold;
+}
+
+.score-label {
+    font-size: 10px;
+    text-align: center;
+}
+
+.customer-info h4 {
+    margin: 0;
+    color: #333;
+}
+
+.customer-details {
+    font-size: 13px;
+    color: #666;
+}
+
+.contact-info {
+    margin-bottom: 10px;
+    font-size: 14px;
+}
+
+.applications table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.applications th {
+    background: #f0f0f0;
+    text-align: left;
+    padding: 5px;
+}
+
+.applications td {
+    padding: 5px;
+    border-bottom: 1px solid #eee;
+}
+
+.select-btn {
+    background: #5cb85c;
+    color: white;
+    border: none;
+    padding: 8px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-top: 10px;
+}
+
+.no-matches {
+    text-align: center;
+    padding: 30px;
+    color: #666;
+}
+</style>
+
 <script>
-document.querySelectorAll('.select-btn').forEach(btn => {
-    btn.addEventListener('click', async function() {
-        const customerId = this.dataset.customerId;
-        const agreementId = this.dataset.agreementId;
-        
-        try {
-            const response = await fetch(`/api/agreements/${agreementId}/link/`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': '{{ csrf_token }}'
-                },
-                body: JSON.stringify({
-                    customer_id: customerId
-                })
-            });
-            
-            const result = await response.json();
-            if (result.success) {
-                alert('Successfully linked!');
-                window.location.href = `/agreements/detail/${agreementId}/`;
-            } else {
-                alert('Error: ' + result.error);
-            }
-        } catch (error) {
-            alert('Network error');
-        }
-    });
-});
+// JavaScript保持不变
 </script>
