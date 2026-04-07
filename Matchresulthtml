@@ -1,3 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Matching Results</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1, h2, h3 {
+            color: #2c3e50;
+        }
+        .agreement-info {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .match-card {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 15px;
+            background-color: #fff;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .match-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .match-score {
+            background-color: #4a90e2;
+            color: white;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        .score-value {
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .score-label {
+            font-size: 10px;
+        }
+        .customer-info h3 {
+            margin: 0;
+        }
+        .customer-details {
+            font-size: 14px;
+            color: #666;
+        }
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            font-size: 14px;
+        }
+        .comparison-table th, .comparison-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        .comparison-table th {
+            background-color: #f2f2f2;
+        }
+        .applications-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+        .applications-table th, .applications-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        .applications-table th {
+            background-color: #f2f2f2;
+        }
+        .select-btn {
+            background-color: #5cb85c;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .no-matches {
+            text-align: center;
+            padding: 30px;
+            color: #666;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+        }
+        .debug-section {
+            margin-top: 30px;
+            border-top: 1px solid #eee;
+            padding-top: 20px;
+        }
+        #raw-response {
+            display: none;
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            max-height: 300px;
+            overflow: auto;
+            font-family: monospace;
+            white-space: pre;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Matching Results</h1>
+        
+        <div class="agreement-info">
+            <h2>Agreement Details</h2>
+            <p><strong>Borrower Name:</strong> {{ agreement.borrower_name }}</p>
+            <p><strong>Facility Amount:</strong> {{ agreement.facility_amount }} {{ agreement.currency }}</p>
+            <p><strong>Agreement Date:</strong> {{ agreement.agreement_date|default:"N/A" }}</p>
+            <p><strong>Normalized Name:</strong> <code>{{ normalized_borrower }}</code></p>
+        </div>
+
+        {% if matches %}
+        <h2>Potential Matches ({{ matches|length }} found)</h2>
+        <p>Sorted by match score (highest first)</p>
+        
+        {% for match in matches %}
+        <div class="match-card">
+            <div class="match-header">
+                <div style="display: flex; align-items: center;">
+                    <div class="match-score">
+                        <div class="score-value">{{ match.score }}%</div>
+                        <div class="score-label">MATCH</div>
+                    </div>
+                    <div style="margin-left: 15px;">
+                        <h3>{{ match.customer.name }}</h3>
+                        <div class="customer-details">
+                            <span>Customer ID: {{ match.customer.customer_id }}</span> | 
+                            <span>Group: {{ match.customer.master_group_id|default:"N/A" }}</span>
+                        </div>
+                    </div>
+                </div>
+                <button class="select-btn" 
+                        data-customer-id="{{ match.customer.id }}"
+                        data-agreement-id="{{ agreement.id }}">
+                    SELECT THIS CUSTOMER
+                </button>
+            </div>
+            
+            <div class="match-details">
+                <h4>Comparison Details</h4>
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th>Field</th>
+                            <th>Original Value</th>
+                            <th>Normalized Value</th>
+                            <th>Match Score</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Customer Name</td>
+                            <td>{{ match.comparison_details.customer_original }}</td>
+                            <td>{{ match.comparison_details.customer_normalized }}</td>
+                            <td>{{ match.comparison_details.name_score }}%</td>
+                        </tr>
+                        {% if match.comparison_details.master_group_original %}
+                        <tr>
+                            <td>Master Group</td>
+                            <td>{{ match.comparison_details.master_group_original }}</td>
+                            <td>{{ match.comparison_details.master_group_normalized }}</td>
+                            <td>{{ match.comparison_details.group_score }}%</td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+                
+                {% if match.applications %}
+                <h4>Recent Credit Applications</h4>
+                <table class="applications-table">
+                    <thead>
+                        <tr>
+                            <th>Application ID</th>
+                            <th>Amount</th>
+                            <th>Currency</th>
+                            <th>Purpose</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for app in match.applications %}
+                        <tr>
+                            <td>{{ app.application_id }}</td>
+                            <td>{{ app.requested_amount }}</td>
+                            <td>{{ app.currency }}</td>
+                            <td>{{ app.purpose|truncatechars:40 }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="no-applications">No recent applications found for this customer.</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+        
+        {% else %}
+        <div class="no-matches">
+            <h3>No Potential Matches Found</h3>
+            <p>No matches found for "{{ agreement.borrower_name }}"</p>
+            <p>Possible reasons:</p>
+            <ul style="text-align: left; display: inline-block;">
+                <li>Check the borrower name spelling in the agreement</li>
+                <li>Try alternative name variations</li>
+                <li>Verify the customer exists in the system</li>
+                <li>Consider lowering the matching threshold</li>
+            </ul>
+        </div>
+        {% endif %}
+        
+        <div class="debug-section">
+            <h3>Debug Information</h3>
+            <button id="toggle-debug" class="select-btn" style="background-color: #6c757d;">Show Raw Response</button>
+            <pre id="raw-response">{{ json_response }}</pre>
+        </div>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Toggle debug info
+        document.getElementById('toggle-debug').addEventListener('click', function() {
+            const pre = document.getElementById('raw-response');
+            pre.style.display = pre.style.display === 'none' ? 'block' : 'none';
+            this.textContent = pre.style.display === 'none' ? 'Show Raw Response' : 'Hide Raw Response';
+        });
+        
+        // Handle customer selection
+        document.querySelectorAll('.select-btn').forEach(btn => {
+            btn.addEventListener('click', async function() {
+                const customerId = this.dataset.customerId;
+                const agreementId = this.dataset.agreementId;
+                const button = this;
+                
+                button.disabled = true;
+                button.textContent = 'Linking...';
+                
+                try {
+                    const response = await fetch(`/agreements/${agreementId}/link/`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'X-CSRFToken': getCookie('csrftoken')
+                        },
+                        body: `customer_id=${customerId}`
+                    });
+                    
+                    const result = await response.json();
+                    if (result.success) {
+                        alert('Success: ' + result.message);
+                        // Refresh the page after successful linking
+                        window.location.href = `/agreements/${agreementId}/`;
+                    } else {
+                        alert('Error: ' + result.message);
+                        button.disabled = false;
+                        button.textContent = 'SELECT THIS CUSTOMER';
+                    }
+                } catch (error) {
+                    alert('Network error: ' + error.message);
+                    button.disabled = false;
+                    button.textContent = 'SELECT THIS CUSTOMER';
+                }
+            });
+        });
+        
+        // Helper function to get CSRF token
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+    });
+    </script>
+</body>
+</html>
+
+
+分界线
+
+
 <!-- templates/agreements/match_results.html -->
 <div class="match-results">
     <h3>Matching Results for: <strong>{{ agreement.borrower_name }}</strong></h3>
