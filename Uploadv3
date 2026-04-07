@@ -1,0 +1,423 @@
+<!-- agreements/templates/agreements/upload.html -->
+{% extends 'agreements/base.html' %}
+
+{% block title %}上传贷款协议 - 贷款协议解析系统{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <!-- 页面标题和返回按钮 -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="mb-0">
+            <i class="fas fa-file-upload text-primary"></i> 上传贷款协议PDF
+        </h1>
+        <a href="{% url 'agreement_list' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left"></i> 返回列表
+        </a>
+    </div>
+    
+    <!-- 需求提示卡片 -->
+    <div class="card border-info mb-4 shadow-sm">
+        <div class="card-header bg-info text-white">
+            <h5 class="mb-0">
+                <i class="fas fa-info-circle"></i> 上传要求
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <h6 class="text-success">
+                        <i class="fas fa-check-circle"></i> 支持的文件
+                    </h6>
+                    <ul class="list-unstyled">
+                        <li><i class="fas fa-file-pdf text-danger"></i> PDF 格式文档</li>
+                        <li><i class="fas fa-file-alt text-primary"></i> 包含标准贷款协议内容</li>
+                        <li><i class="fas fa-language text-warning"></i> 中英文协议均可</li>
+                    </ul>
+                </div>
+                <div class="col-md-6">
+                    <h6 class="text-danger">
+                        <i class="fas fa-exclamation-triangle"></i> 注意事项
+                    </h6>
+                    <ul class="list-unstyled">
+                        <li><i class="fas fa-ban text-danger"></i> 不支持扫描件/图片PDF</li>
+                        <li><i class="fas fa-shield-alt text-primary"></i> 文件最大 10MB</li>
+                        <li><i class="fas fa-sync text-info"></i> 解析时间约 10-30 秒</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 上传表单卡片 -->
+    <div class="card shadow-lg">
+        <div class="card-header bg-white border-bottom-0 pb-0">
+            <ul class="nav nav-tabs border-0" id="uploadTab" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="single-tab" data-bs-toggle="tab" 
+                            data-bs-target="#single" type="button" role="tab">
+                        <i class="fas fa-file-upload"></i> 单文件上传
+                    </button>
+                </li>
+                <!-- 可以在此处添加批量上传标签 -->
+            </ul>
+        </div>
+        
+        <div class="card-body">
+            <div class="tab-content" id="uploadTabContent">
+                <!-- 单文件上传标签页 -->
+                <div class="tab-pane fade show active" id="single" role="tabpanel">
+                    <form method="post" enctype="multipart/form-data" id="uploadForm" 
+                          class="needs-validation" novalidate>
+                        {% csrf_token %}
+                        
+                        <!-- 文件拖放区域 -->
+                        <div class="file-drop-zone mb-4" id="dropZone">
+                            <div class="text-center py-5">
+                                <i class="fas fa-cloud-upload-alt fa-4x text-muted mb-3"></i>
+                                <h4 class="mb-3">拖放文件到此处 或</h4>
+                                
+                                <!-- 文件选择按钮 -->
+                                <div class="mb-3">
+                                    <label for="id_original_file" class="btn btn-primary btn-lg">
+                                        <i class="fas fa-folder-open"></i> 选择PDF文件
+                                    </label>
+                                    <input type="file" 
+                                           name="original_file" 
+                                           id="id_original_file" 
+                                           accept=".pdf,.PDF" 
+                                           onchange="updateFileInfo(this)"
+                                           class="d-none"
+                                           required>
+                                </div>
+                                
+                                <p class="text-muted mb-0">
+                                    <small>支持 .pdf 格式，最大 10MB</small>
+                                </p>
+                            </div>
+                        </div>
+                        
+                        <!-- 文件信息显示 -->
+                        <div class="file-info alert alert-light border mb-4" 
+                             id="fileInfo" style="display: none;">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="mb-1">
+                                        <i class="fas fa-file-pdf text-danger"></i>
+                                        <span id="fileName">未选择文件</span>
+                                    </h6>
+                                    <small class="text-muted">
+                                        <span id="fileSize">0</span> | 
+                                        <span id="fileType">PDF 文档</span>
+                                    </small>
+                                </div>
+                                <button type="button" class="btn btn-sm btn-outline-danger" 
+                                        onclick="clearFile()">
+                                    <i class="fas fa-times"></i> 清除
+                                </button>
+                            </div>
+                            <div class="progress mt-2" style="height: 4px;" id="progressBar" style="display: none;">
+                                <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        
+                        <!-- 解析选项（可扩展区域） -->
+                        <div class="accordion mb-4" id="advancedOptions">
+                            <div class="accordion-item">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button collapsed" type="button" 
+                                            data-bs-toggle="collapse" 
+                                            data-bs-target="#advancedCollapse">
+                                        <i class="fas fa-cog me-2"></i> 高级选项
+                                    </button>
+                                </h2>
+                                <div id="advancedCollapse" class="accordion-collapse collapse" 
+                                     data-bs-parent="#advancedOptions">
+                                    <div class="accordion-body">
+                                        <div class="mb-3">
+                                            <label class="form-label">协议类型</label>
+                                            <select class="form-select">
+                                                <option selected>自动检测</option>
+                                                <option value="loan">贷款协议</option>
+                                                <option value="mortgage">抵押协议</option>
+                                                <option value="guarantee">担保协议</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="autoSave">
+                                            <label class="form-check-label" for="autoSave">
+                                                自动保存解析结果
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 提交按钮 -->
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-success btn-lg" id="submitBtn">
+                                <i class="fas fa-rocket me-2"></i> 上传并解析
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 卡片底部 -->
+        <div class="card-footer bg-light text-center">
+            <small class="text-muted">
+                <i class="fas fa-lock"></i> 您的文件将安全存储，仅用于协议解析
+            </small>
+        </div>
+    </div>
+    
+    <!-- 解析状态显示区域 -->
+    {% if messages %}
+    <div class="mt-4">
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show shadow-sm" 
+             role="alert">
+            {% if message.tags == 'success' %}
+                <i class="fas fa-check-circle me-2"></i>
+            {% elif message.tags == 'error' or message.tags == 'danger' %}
+                <i class="fas fa-exclamation-triangle me-2"></i>
+            {% else %}
+                <i class="fas fa-info-circle me-2"></i>
+            {% endif %}
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    
+    <!-- 最近上传的文件 -->
+    <div class="card mt-4 shadow-sm">
+        <div class="card-header bg-white">
+            <h5 class="mb-0">
+                <i class="fas fa-history text-secondary"></i> 最近上传
+            </h5>
+        </div>
+        <div class="card-body">
+            {% if recent_uploads %}
+            <div class="list-group list-group-flush">
+                {% for agreement in recent_uploads|slice:":5" %}
+                <a href="{% url 'agreement_detail' agreement.id %}" 
+                   class="list-group-item list-group-item-action">
+                    <div class="d-flex w-100 justify-content-between align-items-center">
+                        <div>
+                            <h6 class="mb-1">
+                                <i class="fas fa-file-pdf text-danger me-2"></i>
+                                {{ agreement.file_name|truncatechars:30 }}
+                            </h6>
+                            <small class="text-muted">
+                                上传于 {{ agreement.uploaded_at|date:"Y-m-d H:i" }}
+                            </small>
+                        </div>
+                        <div>
+                            <span class="badge bg-{{ agreement.parsing_status|yesno:'success,warning,danger' }}">
+                                {{ agreement.get_parsing_status_display }}
+                            </span>
+                        </div>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-center py-3 text-muted">
+                <i class="fas fa-inbox fa-2x mb-3"></i>
+                <p class="mb-0">暂无上传记录</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- 样式 -->
+<style>
+.file-drop-zone {
+    border: 2px dashed #dee2e6;
+    border-radius: 10px;
+    background-color: #f8f9fa;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+.file-drop-zone:hover {
+    border-color: #0d6efd;
+    background-color: #e7f1ff;
+}
+.file-drop-zone.dragover {
+    border-color: #198754;
+    background-color: #d1e7dd;
+}
+.file-info {
+    border-left: 4px solid #0d6efd;
+    animation: fadeIn 0.5s;
+}
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.progress {
+    overflow: hidden;
+    border-radius: 2px;
+}
+.accordion-button:not(.collapsed) {
+    background-color: rgba(13, 110, 253, 0.1);
+    color: #0a58ca;
+}
+</style>
+
+<!-- JavaScript -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('id_original_file');
+    const fileInfo = document.getElementById('fileInfo');
+    const submitBtn = document.getElementById('submitBtn');
+    const form = document.getElementById('uploadForm');
+    
+    // 拖放功能
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, preventDefaults, false);
+    });
+    
+    function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropZone.addEventListener(eventName, highlight, false);
+    });
+    
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, unhighlight, false);
+    });
+    
+    function highlight() {
+        dropZone.classList.add('dragover');
+    }
+    
+    function unhighlight() {
+        dropZone.classList.remove('dragover');
+    }
+    
+    dropZone.addEventListener('drop', handleDrop, false);
+    
+    function handleDrop(e) {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        
+        if (files.length > 0) {
+            fileInput.files = files;
+            updateFileInfo(fileInput);
+        }
+    }
+    
+    // 点击整个区域触发文件选择
+    dropZone.addEventListener('click', function() {
+        fileInput.click();
+    });
+    
+    // 防止重复提交
+    form.addEventListener('submit', function(e) {
+        if (!fileInput.files || fileInput.files.length === 0) {
+            e.preventDefault();
+            showAlert('请先选择PDF文件', 'danger');
+            return false;
+        }
+        
+        // 验证文件类型
+        const file = fileInput.files[0];
+        if (!file.name.toLowerCase().endsWith('.pdf')) {
+            e.preventDefault();
+            showAlert('请选择PDF文件', 'danger');
+            return false;
+        }
+        
+        // 验证文件大小（10MB限制）
+        if (file.size > 10 * 1024 * 1024) {
+            e.preventDefault();
+            showAlert('文件大小不能超过10MB', 'danger');
+            return false;
+        }
+        
+        // 禁用按钮，显示上传中
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> 上传中...';
+        
+        // 显示进度条
+        const progressBar = fileInfo.querySelector('.progress-bar');
+        fileInfo.querySelector('.progress').style.display = 'block';
+        
+        // 模拟进度（实际项目中应与后端配合）
+        let progress = 0;
+        const interval = setInterval(() => {
+            progress += 10;
+            progressBar.style.width = progress + '%';
+            
+            if (progress >= 90) {
+                clearInterval(interval);
+            }
+        }, 200);
+    });
+});
+
+// 更新文件信息显示
+function updateFileInfo(input) {
+    const fileInfo = document.getElementById('fileInfo');
+    const fileName = document.getElementById('fileName');
+    const fileSize = document.getElementById('fileSize');
+    
+    if (input.files.length > 0) {
+        const file = input.files[0];
+        fileName.textContent = file.name;
+        fileSize.textContent = formatFileSize(file.size);
+        fileInfo.style.display = 'block';
+        
+        showAlert('文件已选择，点击"上传并解析"开始处理', 'success');
+    } else {
+        fileInfo.style.display = 'none';
+    }
+}
+
+// 清除文件
+function clearFile() {
+    const fileInput = document.getElementById('id_original_file');
+    fileInput.value = '';
+    document.getElementById('fileInfo').style.display = 'none';
+    showAlert('已清除文件选择', 'info');
+}
+
+// 格式化文件大小
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+// 显示临时提示
+function showAlert(message, type) {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+    alertDiv.style.cssText = 'top: 20px; right: 20px; z-index: 1050; min-width: 300px;';
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    document.body.appendChild(alertDiv);
+    
+    setTimeout(() => {
+        alertDiv.remove();
+    }, 3000);
+}
+
+// 调试：检查表单状态
+console.log('上传表单已加载');
+</script>
+{% endblock %}
