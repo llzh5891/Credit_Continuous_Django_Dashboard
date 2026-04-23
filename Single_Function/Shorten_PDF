@@ -1,0 +1,55 @@
+import os
+import fitz  # PyMuPDF
+
+def extract_kpi_pages(pdf_path, output_folder, kpi_keywords):
+    doc = fitz.open(pdf_path)
+    kpi_pages = set()
+    
+    # 快速扫描识别含有关键词的页面
+    for page_num in range(len(doc)):
+        page = doc[page_num]
+        text = page.get_text().lower()
+        if any(keyword.lower() in text for keyword in kpi_keywords):
+            kpi_pages.add(page_num)
+    
+    # 在含有关键词的页面中识别表格
+    table_pages = set()
+    for page_num in kpi_pages:
+        page = doc[page_num]
+        tables = page.find_tables()
+        if tables.tables:  # 如果该页面有表格
+            table_pages.add(page_num)
+    
+    # 确定要保存的页面：前5页 + 有表格的关键词页面
+    target_pages = set(range(min(5, len(doc))))  # 前5页
+    target_pages.update(table_pages)  # 添加含表格的页面
+    target_pages = sorted(target_pages)
+    
+    # 创建新PDF
+    new_doc = fitz.open()
+    for page_num in target_pages:
+        new_doc.insert_pdf(doc, from_page=page_num, to_page=page_num)
+    
+    # 保存新PDF
+    filename = os.path.basename(pdf_path)
+    output_path = os.path.join(output_folder, f"shorten_{filename}")
+    new_doc.save(output_path)
+    new_doc.close()
+    doc.close()
+    return len(table_pages) > 0
+
+# ====== 配置参数 ======
+PDF_FOLDER = "/path/to/your/pdf/folder"  # 更改为你的PDF文件夹路径
+KPI_KEYWORDS = ["KPI", "关键绩效指标", "绩效指标"]  # 在此添加你的关键词
+
+# ====== 主程序 ======
+if __name__ == "__main__":
+    for filename in os.listdir(PDF_FOLDER):
+        if filename.lower().endswith(".pdf"):
+            pdf_path = os.path.join(PDF_FOLDER, filename)
+            try:
+                has_tables = extract_kpi_pages(pdf_path, PDF_FOLDER, KPI_KEYWORDS)
+                status = "含表格" if has_tables else "仅前5页"
+                print(f"已处理: {filename} -> shorten_{filename} ({status})")
+            except Exception as e:
+                print(f"处理失败 {filename}: {e}")
