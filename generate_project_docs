@@ -1,0 +1,167 @@
+# 保存为 generate_project_docs.ps1
+# 在 PowerShell 中运行: .\generate_project_docs.ps1
+
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "   Django 项目文档生成工具" -ForegroundColor Cyan
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host ""
+
+# 创建输出目录
+$timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$outputDir = "project_docs_$timestamp"
+New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+
+Write-Host "[1/6] 收集基本信息..." -ForegroundColor Green
+@"
+# 🎯 Django 项目文档
+
+## 📊 项目概览
+- **生成时间**: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+- **项目路径**: $(Get-Location)
+- **操作系统**: Windows
+
+## 🐍 Python 环境
+- **Python版本**: $(python --version 2>&1)
+- **虚拟环境**: $(if (Test-Path "venv\Scripts\python.exe") { "venv" } else { "未检测到" })
+"@ | Out-File -FilePath "$outputDir\00_概览.md" -Encoding UTF8
+
+Write-Host "[2/6] 分析项目结构..." -ForegroundColor Green
+$structure = Get-ChildItem -Recurse -Directory | 
+    Where-Object { $_.Name -notmatch '__pycache__|\.git|\.vscode|venv|env|migrations' } |
+    Select-Object -ExpandProperty FullName
+
+@"
+## 📁 项目结构
+
+\`\`\`
+$structure
+\`\`\`
+"@ | Out-File -FilePath "$outputDir\01_结构.md" -Encoding UTF8
+
+Write-Host "[3/6] 查找关键文件..." -ForegroundColor Green
+# 查找关键Django文件
+$djangoFiles = @(
+    "settings.py",
+    "urls.py",
+    "manage.py",
+    "requirements.txt"
+)
+
+foreach ($pattern in $djangoFiles) {
+    $files = Get-ChildItem -Recurse -Filter $pattern -ErrorAction SilentlyContinue
+    foreach ($file in $files) {
+        $relativePath = $file.FullName.Replace("$(Get-Location)\", "")
+        @"
+## 📄 $relativePath
+\`\`\`
+$(Get-Content $file.FullName -TotalCount 20 -ErrorAction SilentlyContinue)
+\`\`\`
+"@ | Out-File -FilePath "$outputDir\文件_$($pattern).md" -Encoding UTF8 -Append
+    }
+}
+
+Write-Host "[4/6] 分析Django应用..." -ForegroundColor Green
+# 查找所有应用目录
+$apps = Get-ChildItem -Recurse -Filter "apps.py" -ErrorAction SilentlyContinue | 
+    Select-Object -ExpandProperty DirectoryName
+
+$appContent = ""
+foreach ($app in $apps) {
+    $appName = Split-Path $app -Leaf
+    $appContent += "### 📱 应用: $appName`n"
+    $appContent += "路径: $app`n`n"
+    
+    # 检查模型文件
+    $modelsFile = Join-Path $app "models.py"
+    if (Test-Path $modelsFile) {
+        $models = Select-String -Path $modelsFile -Pattern "class.*models.Model" | 
+                   Select-Object -First 5
+        if ($models) {
+            $appContent += "**数据模型**:`n"
+            foreach ($model in $models) {
+                $appContent += "- $($model.Line.Trim())`n"
+            }
+            $appContent += "`n"
+        }
+    }
+    
+    # 检查视图文件
+    $viewsFile = Join-Path $app "views.py"
+    if (Test-Path $viewsFile) {
+        $views = Select-String -Path $viewsFile -Pattern "def |class.*View" | 
+                  Select-Object -First 5
+        if ($views) {
+            $appContent += "**视图函数**:`n"
+            foreach ($view in $views) {
+                $appContent += "- $($view.Line.Trim())`n"
+            }
+            $appContent += "`n"
+        }
+    }
+    
+    $appContent += "---`n`n"
+}
+
+$appContent | Out-File -FilePath "$outputDir\02_应用.md" -Encoding UTF8
+
+Write-Host "[5/6] 生成运行指南..." -ForegroundColor Green
+@"
+## 🚀 运行命令
+
+\`\`\`powershell
+# 1. 激活虚拟环境
+.\venv\Scripts\Activate.ps1
+
+# 2. 安装依赖
+pip install -r requirements.txt
+
+# 3. 数据库迁移
+python manage.py makemigrations
+python manage.py migrate
+
+# 4. 运行开发服务器
+python manage.py runserver 8002
+
+# 5. 创建管理员
+python manage.py createsuperuser
+\`\`\`
+
+## 📁 常用文件
+- \`settings.py\` - 项目配置
+- \`urls.py\` - URL路由
+- \`manage.py\` - Django命令行工具
+- \`requirements.txt\` - Python依赖
+"@ | Out-File -FilePath "$outputDir\03_运行.md" -Encoding UTF8
+
+Write-Host "[6/6] 合并所有文档..." -ForegroundColor Green
+# 合并所有文件
+$combinedContent = Get-Content "$outputDir\00_概览.md" -Encoding UTF8
+$combinedContent += "`n`n"
+$combinedContent += Get-Content "$outputDir\01_结构.md" -Encoding UTF8
+$combinedContent += "`n`n"
+$combinedContent += Get-Content "$outputDir\02_应用.md" -Encoding UTF8
+$combinedContent += "`n`n"
+$combinedContent += Get-Content "$outputDir\03_运行.md" -Encoding UTF8
+
+# 添加项目目录文件列表
+$pyFiles = Get-ChildItem -Recurse -Filter "*.py" -ErrorAction SilentlyContinue | 
+           Select-Object -First 20 -ExpandProperty FullName |
+           ForEach-Object { $_.Replace("$(Get-Location)\", "") }
+
+$combinedContent += "`n`n## 📄 Python 文件列表`n`n"
+foreach ($file in $pyFiles) {
+    $combinedContent += "- \`$file\``n"
+}
+
+$combinedContent | Out-File -FilePath "PROJECT_README.md" -Encoding UTF8
+
+Write-Host "========================================" -ForegroundColor Green
+Write-Host "✅ 文档生成完成！" -ForegroundColor Green
+Write-Host ""
+Write-Host "📄 主文档: PROJECT_README.md" -ForegroundColor Yellow
+Write-Host "📁 详细文档: $outputDir\" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "📊 统计信息:" -ForegroundColor Cyan
+Write-Host "- 文档大小: $((Get-Item "PROJECT_README.md").Length) 字节"
+Write-Host "- 文件数量: $(Get-ChildItem $outputDir | Measure-Object).Count 个"
+Write-Host "========================================" -ForegroundColor Cyan
