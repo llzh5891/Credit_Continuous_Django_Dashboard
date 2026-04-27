@@ -1,0 +1,29 @@
+from django.contrib import admin
+from .models import TestLogic, AuditException, Feedback
+
+
+@admin.register(TestLogic)
+class TestLogicAdmin(admin.ModelAdmin):
+    list_display = ('test_name', 'test_version', 'status', 'test_logic_publish_date', 'created_at')
+    list_filter = ('status', 'test_logic_publish_date')
+    search_fields = ('test_name', 'test_description', 'test_logic')
+    readonly_fields = ('test_id', 'created_at', 'updated_at')
+    ordering = ('-created_at',)
+
+
+@admin.register(AuditException)
+class AuditExceptionAdmin(admin.ModelAdmin):
+    list_display = ('exception_id', 'test', 'entity_type', 'entity_id', 'status', 'created_at')
+    list_filter = ('status', 'entity_type', 'created_at')
+    search_fields = ('entity_id', 'exception_details')
+    readonly_fields = ('exception_id', 'created_at', 'updated_at')
+    ordering = ('-created_at',)
+
+
+@admin.register(Feedback)
+class FeedbackAdmin(admin.ModelAdmin):
+    list_display = ('id', 'test', 'exception', 'user_id', 'feedback_type', 'process_status', 'feedback_date')
+    list_filter = ('feedback_type', 'process_status', 'feedback_date')
+    search_fields = ('user_id', 'feedback_content')
+    readonly_fields = ('created_at', 'updated_at')
+    ordering = ('-created_at',)
