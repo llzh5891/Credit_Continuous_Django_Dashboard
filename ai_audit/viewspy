@@ -136,19 +136,28 @@ def generate_tests(request):
     facilities = list(Facility.objects.all()[:5].values())
     agreements = list(AgreementPDF.objects.all()[:5].values())
     
-    # Convert UUID objects to strings
-    def convert_uuids(data):
+    # Convert non-serializable objects to strings
+    def convert_objects(data):
+        from datetime import date, datetime
+        
         for item in data:
             for key, value in item.items():
+                # Convert UUID objects to strings
                 if hasattr(value, 'hex'):  # Check if it's a UUID object
                     item[key] = str(value)
+                # Convert date objects to strings
+                elif isinstance(value, date):
+                    item[key] = value.isoformat()
+                # Convert datetime objects to strings
+                elif isinstance(value, datetime):
+                    item[key] = value.isoformat()
         return data
     
-    # Convert UUIDs in all data sets
-    customers = convert_uuids(customers)
-    credit_applications = convert_uuids(credit_applications)
-    facilities = convert_uuids(facilities)
-    agreements = convert_uuids(agreements)
+    # Convert objects in all data sets
+    customers = convert_objects(customers)
+    credit_applications = convert_objects(credit_applications)
+    facilities = convert_objects(facilities)
+    agreements = convert_objects(agreements)
     
     # Create sample data dictionary
     sample_data = {
