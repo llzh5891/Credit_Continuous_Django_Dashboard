@@ -4,12 +4,13 @@ from django.views.decorators.csrf import csrf_exempt
 import json
 from .models import TestLogic, Exception, Feedback
 from .api import get_api_instance
-from .utils import get_entity_by_id, get_entity_data, get_next_version
-
+from .utils import get_entity_by_id, get_entity_data, get_next_version, generate_test_id
+from credit_app.models import Customer, CreditApplication, Facility
+from agreements.models import AgreementPDF
 
 def dashboard(request):
     """
-    AI 审计仪表盘
+    AI Audit Dashboard
     """
     tests = TestLogic.objects.order_by('-created_at')
     exceptions = Exception.objects.filter(status='detected').order_by('-created_at')[:10]
@@ -21,10 +22,9 @@ def dashboard(request):
     
     return render(request, 'ai_audit/dashboard.html', context)
 
-
 def test_detail(request, test_id):
     """
-    测试详情
+    Test Details
     """
     test = get_object_or_404(TestLogic, test_id=test_id)
     exceptions = test.exceptions.all().order_by('-created_at')
@@ -36,10 +36,9 @@ def test_detail(request, test_id):
     
     return render(request, 'ai_audit/test_detail.html', context)
 
-
 def exception_detail(request, exception_id):
     """
-    异常详情
+    Exception Details
     """
     exception = get_object_or_404(Exception, exception_id=exception_id)
     entity = get_entity_by_id(exception.entity_type, exception.entity_id)
@@ -56,7 +55,7 @@ def exception_detail(request, exception_id):
 @csrf_exempt
 def update_exception_status(request):
     """
-    更新异常状态
+    Update exception status
     """
     if request.method == 'POST':
         data = json.loads(request.body)
@@ -76,7 +75,7 @@ def update_exception_status(request):
 @csrf_exempt
 def submit_feedback(request):
     """
-    提交反馈
+    Submit feedback
     """
     if request.method == 'POST':
         data = json.loads(request.body)
@@ -87,7 +86,7 @@ def submit_feedback(request):
         try:
             exception = Exception.objects.get(exception_id=exception_id)
             
-            # 创建反馈
+            # Create feedback
             feedback = Feedback.objects.create(
                 test=exception.test,
                 exception=exception,
@@ -96,11 +95,11 @@ def submit_feedback(request):
                 feedback_type='false_positive'
             )
             
-            # 更新异常状态
+            # Update exception status
             exception.status = 'false_positive'
             exception.save()
             
-            # 生成新版本测试逻辑
+            # Generate new version of test logic
             api = get_api_instance()
             new_logic = api.update_test_logic(
                 exception.test.test_logic,
@@ -108,7 +107,7 @@ def submit_feedback(request):
             )
             
             if new_logic:
-                # 创建新版本测试
+                # Create new version of test
                 next_version = get_next_version(exception.test.test_id)
                 TestLogic.objects.create(
                     test_id=exception.test.test_id,
@@ -129,9 +128,36 @@ def submit_feedback(request):
 
 def generate_tests(request):
     """
-    生成测试逻辑
+    Generate test logic
     """
-    # 这里可以添加生成测试的逻辑
-    # 例如：从数据库获取数据，调用API生成测试
+    # Get sample data from database
+    sample_data = {
+        'customers': list(Customer.objects.all()[:5].values()),
+        'credit_applications': list(CreditApplication.objects.all()[:5].values()),
+        'facilities': list(Facility.objects.all()[:5].values()),
+        'agreements': list(AgreementPDF.objects.all()[:5].values())
+    }
+    
+    # Call API to generate test logic
+    api = get_api_instance()
+    response = api.generate_test_logic(sample_data)
+    
+    if response:
+        # Parse API response
+        test_content = response.get('content', '')
+        test_rationale = response.get('rationale', '')
+        
+        # Create new test logic
+        test_id = generate_test_id()
+        TestLogic.objects.create(
+            test_id=test_id,
+            test_version=1,
+            test_name=f"Audit Test {test_id}",
+            test_description="AI-generated audit test",
+            column_to_use="Multiple columns",
+            test_logic=test_content,
+            ai_rationale=test_rationale,
+            model_version="GPT-5"
+        )
     
     return redirect('ai_audit:dashboard')
