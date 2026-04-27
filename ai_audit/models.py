@@ -1,0 +1,269 @@
+import uuid
+from django.db import models
+from django.utils import timezone
+from credit_app.models import Customer, CreditApplication, Facility
+from agreements.models import AgreementPDF
+
+
+class TestLogic(models.Model):
+    """
+    AI-generated test logic model
+    """
+    # Primary key
+    test_id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+    
+    # Test version
+    test_version = models.IntegerField(
+        default=1,
+        verbose_name='Test Version'
+    )
+    
+    # Test information
+    test_name = models.CharField(
+        max_length=200,
+        verbose_name='Test Name'
+    )
+    
+    test_description = models.TextField(
+        verbose_name='Test Description',
+        null=True,
+        blank=True
+    )
+    
+    # Column to use
+    column_to_use = models.CharField(
+        max_length=100,
+        verbose_name='Column to Use'
+    )
+    
+    # Test logic
+    test_logic = models.TextField(
+        verbose_name='Test Logic'
+    )
+    
+    # AI rationale
+    ai_rationale = models.TextField(
+        verbose_name='AI Rationale',
+        null=True,
+        blank=True
+    )
+    
+    # Publish date
+    test_logic_publish_date = models.DateTimeField(
+        default=timezone.now,
+        verbose_name='Publish Date'
+    )
+    
+    # Status
+    STATUS_CHOICES = [
+        ('active', 'Active'),
+        ('inactive', 'Inactive'),
+    ]
+    
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='active',
+        verbose_name='Status'
+    )
+    
+    # Model version
+    model_version = models.CharField(
+        max_length=50,
+        verbose_name='Model Version',
+        null=True,
+        blank=True
+    )
+    
+    # Metadata
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Created At'
+    )
+    
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name='Updated At'
+    )
+    
+    class Meta:
+        db_table = 'ai_audit_test_logic'
+        verbose_name = 'Test Logic'
+        verbose_name_plural = 'Test Logic'
+        unique_together = ('test_id', 'test_version')
+    
+    def __str__(self):
+        return f"{self.test_name} (v{self.test_version})"
+
+
+class Exception(models.Model):
+    """
+    Test-generated exception model
+    """
+    # Primary key
+    exception_id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+    
+    # Related test
+    test = models.ForeignKey(
+        TestLogic,
+        on_delete=models.CASCADE,
+        related_name='exceptions',
+        verbose_name='Test'
+    )
+    
+    # Entity type
+    ENTITY_TYPE_CHOICES = [
+        ('Customer', 'Customer'),
+        ('CreditApplication', 'Credit Application'),
+        ('Facility', 'Facility'),
+        ('AgreementPDF', 'Agreement PDF'),
+    ]
+    
+    entity_type = models.CharField(
+        max_length=50,
+        choices=ENTITY_TYPE_CHOICES,
+        verbose_name='Entity Type'
+    )
+    
+    # Entity ID
+    entity_id = models.CharField(
+        max_length=100,
+        verbose_name='Entity ID'
+    )
+    
+    # Exception details
+    exception_details = models.TextField(
+        verbose_name='Exception Details'
+    )
+    
+    # Status
+    STATUS_CHOICES = [
+        ('detected', 'Detected'),
+        ('reviewed', 'Reviewed'),
+        ('investigated', 'Investigated'),
+        ('resolved', 'Resolved'),
+        ('false_positive', 'False Positive'),
+    ]
+    
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='detected',
+        verbose_name='Status'
+    )
+    
+    # Metadata
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Created At'
+    )
+    
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name='Updated At'
+    )
+    
+    class Meta:
+        db_table = 'ai_audit_exception'
+        verbose_name = 'Exception'
+        verbose_name_plural = 'Exceptions'
+    
+    def __str__(self):
+        return f"Exception: {self.entity_type} - {self.entity_id}"
+
+
+class Feedback(models.Model):
+    """
+    User feedback model
+    """
+    # Primary key
+    id = models.AutoField(
+        primary_key=True
+    )
+    
+    # Related test
+    test = models.ForeignKey(
+        TestLogic,
+        on_delete=models.CASCADE,
+        related_name='feedbacks',
+        verbose_name='Test'
+    )
+    
+    # Related exception
+    exception = models.ForeignKey(
+        Exception,
+        on_delete=models.CASCADE,
+        related_name='feedbacks',
+        verbose_name='Exception'
+    )
+    
+    # User information
+    user_id = models.CharField(
+        max_length=100,
+        verbose_name='User ID'
+    )
+    
+    # Feedback content
+    feedback_content = models.TextField(
+        verbose_name='Feedback Content'
+    )
+    
+    # Feedback type
+    FEEDBACK_TYPE_CHOICES = [
+        ('false_positive', 'False Positive'),
+        ('suggestion', 'Suggestion'),
+        ('bug', 'Bug'),
+    ]
+    
+    feedback_type = models.CharField(
+        max_length=20,
+        choices=FEEDBACK_TYPE_CHOICES,
+        default='false_positive',
+        verbose_name='Feedback Type'
+    )
+    
+    # Process status
+    PROCESS_STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('processed', 'Processed'),
+    ]
+    
+    process_status = models.CharField(
+        max_length=20,
+        choices=PROCESS_STATUS_CHOICES,
+        default='pending',
+        verbose_name='Process Status'
+    )
+    
+    # Feedback date
+    feedback_date = models.DateTimeField(
+        default=timezone.now,
+        verbose_name='Feedback Date'
+    )
+    
+    # Metadata
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Created At'
+    )
+    
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name='Updated At'
+    )
+    
+    class Meta:
+        db_table = 'ai_audit_feedback'
+        verbose_name = 'Feedback'
+        verbose_name_plural = 'Feedback'
+    
+    def __str__(self):
+        return f"Feedback: {self.user_id} - {self.feedback_type}"
