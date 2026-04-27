@@ -131,11 +131,31 @@ def generate_tests(request):
     Generate test logic
     """
     # Get sample data from database
+    customers = list(Customer.objects.all()[:5].values())
+    credit_applications = list(CreditApplication.objects.all()[:5].values())
+    facilities = list(Facility.objects.all()[:5].values())
+    agreements = list(AgreementPDF.objects.all()[:5].values())
+    
+    # Convert UUID objects to strings
+    def convert_uuids(data):
+        for item in data:
+            for key, value in item.items():
+                if hasattr(value, 'hex'):  # Check if it's a UUID object
+                    item[key] = str(value)
+        return data
+    
+    # Convert UUIDs in all data sets
+    customers = convert_uuids(customers)
+    credit_applications = convert_uuids(credit_applications)
+    facilities = convert_uuids(facilities)
+    agreements = convert_uuids(agreements)
+    
+    # Create sample data dictionary
     sample_data = {
-        'customers': list(Customer.objects.all()[:5].values()),
-        'credit_applications': list(CreditApplication.objects.all()[:5].values()),
-        'facilities': list(Facility.objects.all()[:5].values()),
-        'agreements': list(AgreementPDF.objects.all()[:5].values())
+        'customers': customers,
+        'credit_applications': credit_applications,
+        'facilities': facilities,
+        'agreements': agreements
     }
     
     # Call API to generate test logic
