@@ -8,6 +8,7 @@ from .utils import get_entity_by_id, get_entity_data, get_next_version, generate
 from credit_app.models import Customer, CreditApplication, Facility
 from agreements.models import AgreementPDF
 
+
 def dashboard(request):
     """
     AI Audit Dashboard
@@ -22,6 +23,7 @@ def dashboard(request):
     
     return render(request, 'ai_audit/dashboard.html', context)
 
+
 def test_detail(request, test_id):
     """
     Test Details
@@ -35,6 +37,7 @@ def test_detail(request, test_id):
     }
     
     return render(request, 'ai_audit/test_detail.html', context)
+
 
 def exception_detail(request, exception_id):
     """
@@ -51,6 +54,7 @@ def exception_detail(request, exception_id):
     }
     
     return render(request, 'ai_audit/exception_detail.html', context)
+
 
 @csrf_exempt
 def update_exception_status(request):
@@ -71,6 +75,7 @@ def update_exception_status(request):
             return JsonResponse({'success': False, 'error': str(e)})
     
     return JsonResponse({'success': False, 'error': 'Invalid request'})
+
 
 @csrf_exempt
 def submit_feedback(request):
@@ -126,6 +131,7 @@ def submit_feedback(request):
     
     return JsonResponse({'success': False, 'error': 'Invalid request'})
 
+
 def generate_tests(request):
     """
     Generate test logic
@@ -139,18 +145,28 @@ def generate_tests(request):
     # Convert non-serializable objects to strings
     def convert_objects(data):
         from datetime import date, datetime
+        from decimal import Decimal
         
         for item in data:
             for key, value in item.items():
+                # Skip None values
+                if value is None:
+                    continue
                 # Convert UUID objects to strings
-                if hasattr(value, 'hex'):  # Check if it's a UUID object
+                if hasattr(value, 'hex') and hasattr(value, 'fields'):
                     item[key] = str(value)
                 # Convert date objects to strings
-                elif isinstance(value, date):
+                elif isinstance(value, date) and not isinstance(value, datetime):
                     item[key] = value.isoformat()
                 # Convert datetime objects to strings
                 elif isinstance(value, datetime):
-                    item[key] = value.isoformat()
+                    if value.tzinfo is not None:
+                        item[key] = value.isoformat()
+                    else:
+                        item[key] = value.isoformat()
+                # Convert Decimal objects to strings
+                elif isinstance(value, Decimal):
+                    item[key] = str(value)
         return data
     
     # Convert objects in all data sets
