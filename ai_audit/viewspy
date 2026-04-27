@@ -1,8 +1,8 @@
 from django.shortcuts import render, get_object_or_404, redirect
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 import json
-from .models import TestLogic, Exception, Feedback
+from .models import TestLogic, AuditException, Feedback
 from .api import get_api_instance
 from .utils import get_entity_by_id, get_entity_data, get_next_version, generate_test_id
 from credit_app.models import Customer, CreditApplication, Facility
@@ -14,7 +14,7 @@ def dashboard(request):
     AI Audit Dashboard
     """
     tests = TestLogic.objects.order_by('-created_at')
-    exceptions = Exception.objects.filter(status='detected').order_by('-created_at')[:10]
+    exceptions = AuditException.objects.filter(status='detected').order_by('-created_at')[:10]
     
     context = {
         'tests': tests,
@@ -43,7 +43,7 @@ def exception_detail(request, exception_id):
     """
     Exception Details
     """
-    exception = get_object_or_404(Exception, exception_id=exception_id)
+    exception = get_object_or_404(AuditException, exception_id=exception_id)
     entity = get_entity_by_id(exception.entity_type, exception.entity_id)
     entity_data = get_entity_data(entity)
     
@@ -67,10 +67,12 @@ def update_exception_status(request):
         status = data.get('status')
         
         try:
-            exception = Exception.objects.get(exception_id=exception_id)
+            exception = AuditException.objects.get(exception_id=exception_id)
             exception.status = status
             exception.save()
             return JsonResponse({'success': True})
+        except AuditException.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Exception not found'})
         except Exception as e:
             return JsonResponse({'success': False, 'error': str(e)})
     
@@ -89,7 +91,7 @@ def submit_feedback(request):
         user_id = data.get('user_id', 'anonymous')
         
         try:
-            exception = Exception.objects.get(exception_id=exception_id)
+            exception = AuditException.objects.get(exception_id=exception_id)
             
             # Create feedback
             feedback = Feedback.objects.create(
@@ -126,6 +128,8 @@ def submit_feedback(request):
                 )
             
             return JsonResponse({'success': True})
+        except AuditException.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Exception not found'})
         except Exception as e:
             return JsonResponse({'success': False, 'error': str(e)})
     
