@@ -195,7 +195,7 @@ def drop_test(request):
 
 
 def generate_tests(request):
-    """Generate new test logic via AI"""
+    """Generate test logic"""
     try:
         # Get sample data from database
         customers = list(Customer.objects.all()[:5].values())
@@ -254,9 +254,12 @@ def generate_tests(request):
             test_content = json.dumps(response, indent=2)
             
             test_id = generate_test_id()
-            TestLogic.objects.create(
+            test_version = 1
+            
+            # Create test logic
+            test = TestLogic.objects.create(
                 test_id=test_id,
-                test_version=1,
+                test_version=test_version,
                 test_name=f"Audit Test {test_id}",
                 test_description="AI-generated audit test",
                 column_to_use="Multiple columns",
@@ -269,6 +272,19 @@ def generate_tests(request):
                 model_version="GPT-5",
                 status='pending'
             )
+            
+            # Create mock exceptions based on the exception rules
+            # This is a simplified example - in reality, you would run the test against actual data
+            for exception_rule in exceptions_data:
+                # Mock exception generation
+                AuditException.objects.create(
+                    test=test,
+                    test_version=test_version,
+                    entity_type='Customer',
+                    entity_id=str(uuid.uuid4()),
+                    exception_details=f"Exception detected: {exception_rule}"
+                )
+            
         else:
             return HttpResponse("API call failed")
         
