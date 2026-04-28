@@ -8,19 +8,25 @@
         body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }
         .container { max-width: 1400px; margin: 0 auto; }
         .card { background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); padding: 20px; margin-bottom: 20px; }
-        .btn { display: inline-block; padding: 8px 16px; background: #4CAF50; color: white; text-decoration: none; border-radius: 4px; margin-right: 8px; border: none; cursor: pointer; }
+        .btn { display: inline-block; padding: 8px 16px; background: #4CAF50; color: white; text-decoration: none; border-radius: 4px; margin-right: 8px; border: none; cursor: pointer; font-size: 14px; }
+        .btn:hover { opacity: 0.9; }
         .btn-danger { background: #f44336; }
         .btn-info { background: #2196F3; }
+        .btn-warning { background: #ff9800; }
         .status-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; }
         .status-pending { background: #ffeb3b; color: #333; }
         .status-accepted { background: #4caf50; color: white; }
         .status-dropped { background: #f44336; color: white; }
+        .status-active { background: #2196F3; color: white; }
         .test-item { border-bottom: 1px solid #eee; padding: 15px 0; }
         .test-item:last-child { border-bottom: none; }
+        .test-header { display: flex; justify-content: space-between; align-items: center; }
+        .test-meta { color: #666; font-size: 14px; margin-top: 5px; }
         .modal { display: none; position: fixed; z-index: 1; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background: rgba(0,0,0,0.4); }
         .modal-content { background: #fefefe; margin: 15% auto; padding: 20px; border: 1px solid #888; width: 80%; max-width: 500px; border-radius: 8px; }
         .close { color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
         textarea { width: 100%; height: 100px; margin: 10px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px; }
+        .action-buttons { display: flex; gap: 8px; }
     </style>
 </head>
 <body>
@@ -33,22 +39,39 @@
             
             {% for test in tests %}
             <div class="test-item">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div class="test-header">
                     <div>
                         <h3>{{ test.test_name }} (v{{ test.test_version }})</h3>
-                        <span class="status-badge status-{{ test.status }}">{{ test.get_status_display }}</span>
+                        <div class="test-meta">
+                            <span class="status-badge status-{{ test.status }}">{{ test.get_status_display }}</span>
+                            <span style="margin-left: 10px;">Created: {{ test.created_at|date:"Y-m-d H:i" }}</span>
+                        </div>
                     </div>
-                    <div>
+                    <div class="action-buttons">
+                        <!-- View Details button -->
+                        <button class="btn btn-info" onclick="location.href='{% url 'ai_audit:test_detail' test.test_id %}'">
+                            View Details
+                        </button>
+                        
                         {% if test.status == 'pending' %}
-                        <button class="btn btn-info" onclick="location.href='{% url 'ai_audit:test_detail' test.test_id %}'">View Details</button>
-                        <button class="btn" onclick="markAccepted('{{ test.test_id }}')">Recognize</button>
-                        <button class="btn btn-danger" onclick="openDropModal('{{ test.test_id }}')">Drop</button>
+                        <button class="btn" onclick="markAccepted('{{ test.test_id }}')">
+                            Recognize
+                        </button>
+                        <button class="btn btn-danger" onclick="openDropModal('{{ test.test_id }}')">
+                            Drop
+                        </button>
                         {% endif %}
+                        
+                        <!-- View Exceptions button (always visible) -->
+                        <button class="btn btn-warning" onclick="location.href='{% url 'ai_audit:exception_list' test.test_id %}'">
+                            View Exceptions
+                        </button>
                     </div>
                 </div>
+                <p style="margin-top: 10px; color: #666;">{{ test.test_description|default:"No description" }}</p>
             </div>
             {% empty %}
-            <p>No tests generated yet.</p>
+            <p>No tests generated yet. Click "Generate New Test" to create one.</p>
             {% endfor %}
         </div>
         
@@ -56,9 +79,26 @@
             <h2>Unprocessed Exceptions</h2>
             {% for exception in exceptions %}
             <div class="test-item">
-                <h3>{{ exception.entity_type }} - {{ exception.entity_id }}</h3>
-                <p>{{ exception.exception_details }}</p>
-                <button class="btn btn-info" onclick="location.href='{% url 'ai_audit:exception_detail' exception.exception_id %}'">View Details</button>
+                <div class="test-header">
+                    <div>
+                        <h3>{{ exception.entity_type }} - {{ exception.entity_id }}</h3>
+                        <div class="test-meta">
+                            <span class="status-badge status-detected">{{ exception.get_status_display }}</span>
+                            <span style="margin-left: 10px;">Test: {{ exception.test.test_name }}</span>
+                        </div>
+                    </div>
+                    <div class="action-buttons">
+                        <button class="btn btn-info" onclick="location.href='{% url 'ai_audit:exception_detail' exception.exception_id %}'">
+                            View Details
+                        </button>
+                        <button class="btn btn-warning" onclick="location.href='{% url 'ai_audit:exception_list' exception.test.test_id %}'">
+                            View Test Exceptions
+                        </button>
+                    </div>
+                </div>
+                <p style="margin-top: 5px; padding: 10px; background: #f9f9f9; border-radius: 4px;">
+                    {{ exception.exception_details|truncatechars:100 }}
+                </p>
             </div>
             {% empty %}
             <p>No exceptions found.</p>
@@ -71,7 +111,8 @@
         <div class="modal-content">
             <span class="close" onclick="closeDropModal()">&times;</span>
             <h3>Confirm Drop Test</h3>
-            <textarea id="dropReason" placeholder="Enter reason..."></textarea>
+            <p>Please provide a reason for dropping this test:</p>
+            <textarea id="dropReason" placeholder="Enter reason for dropping..."></textarea>
             <button class="btn btn-danger" onclick="confirmDrop()">Confirm Drop</button>
             <button class="btn" style="background: #ccc;" onclick="closeDropModal()">Cancel</button>
         </div>
@@ -93,7 +134,7 @@
         
         function confirmDrop() {
             const reason = document.getElementById('dropReason').value;
-            if (!reason) { alert('Enter reason'); return; }
+            if (!reason) { alert('Please enter a reason'); return; }
             fetch('{% url 'ai_audit:drop_test' %}', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}'},
