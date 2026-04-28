@@ -1,20 +1,84 @@
 import uuid
 from django.db import models
 from django.utils import timezone
-from credit_app.models import Customer, CreditApplication, Facility
-from agreements.models import AgreementPDF
 
 
 class TestLogic(models.Model):
-    """
-    AI-generated test logic model
-    """
-    # Primary key
+    """AI-generated audit test logic model"""
+    
     test_id = models.UUIDField(
         primary_key=True,
         default=uuid.uuid4,
-        editable=False
+        editable=False,
+        verbose_name='Test ID'
     )
+    
+    test_version = models.IntegerField(
+        default=1,
+        verbose_name='Test Version'
+    )
+    
+    test_name = models.CharField(
+        max_length=200,
+        verbose_name='Test Name'
+    )
+    
+    test_description = models.TextField(
+        null=True,
+        blank=True,
+        verbose_name='Test Description'
+    )
+    
+    column_to_use = models.CharField(
+        max_length=100,
+        verbose_name='Column to Use'
+    )
+    
+    objectives = models.JSONField(
+        default=list,
+        null=True,
+        blank=True,
+        verbose_name='Objectives'
+    )
+    
+    how_to_test = models.JSONField(
+        default=list,
+        null=True,
+        blank=True,
+        verbose_name='How to Test'
+    )
+    
+    exceptions = models.JSONField(
+        default=list,
+        null=True,
+        blank=True,
+        verbose_name='Exception Rules'
+    )
+    
+    evidence = models.JSONField(
+        default=list,
+        null=True,
+        blank=True,
+        verbose_name='Evidence Required'
+    )
+    
+    test_logic = models.TextField(
+        null=True,
+        blank=True,
+        verbose_name='Original Test Logic'
+    )
+    
+    ai_rationale = models.TextField(
+        null=True,
+        blank=True,
+        verbose_name='AI Rationale'
+    )
+    
+    test_logic_publish_date = models.DateTimeField(
+        default=timezone.now,
+        verbose_name='Publish Date'
+    )
+    
     STATUS_CHOICES = [
         ('pending', 'Pending'),
         ('accepted', 'Accepted'),
@@ -28,102 +92,15 @@ class TestLogic(models.Model):
         choices=STATUS_CHOICES,
         default='pending',
         verbose_name='Status'
-    )    
-    # Test version
-    test_version = models.IntegerField(
-        default=1,
-        verbose_name='Test Version'
     )
     
-    # Test information
-    test_name = models.CharField(
-        max_length=200,
-        verbose_name='Test Name'
-    )
-    
-    test_description = models.TextField(
-        verbose_name='Test Description',
-        null=True,
-        blank=True
-    )
-    
-    # Column to use
-    column_to_use = models.CharField(
-        max_length=100,
-        verbose_name='Column to Use'
-    )
-    
-    # Structured test logic fields
-    objectives = models.JSONField(
-        verbose_name='Objectives',
-        default=list,
-        null=True,
-        blank=True
-    )
-    
-    how_to_test = models.JSONField(
-        verbose_name='How to Test',
-        default=list,
-        null=True,
-        blank=True
-    )
-    
-    exceptions = models.JSONField(
-        verbose_name='Exceptions',
-        default=list,
-        null=True,
-        blank=True
-    )
-    
-    evidence = models.JSONField(
-        verbose_name='Evidence Required',
-        default=list,
-        null=True,
-        blank=True
-    )
-    
-    # Original test logic (for backup)
-    test_logic = models.TextField(
-        verbose_name='Original Test Logic',
-        null=True,
-        blank=True
-    )
-    
-    # AI rationale
-    ai_rationale = models.TextField(
-        verbose_name='AI Rationale',
-        null=True,
-        blank=True
-    )
-    
-    # Publish date
-    test_logic_publish_date = models.DateTimeField(
-        default=timezone.now,
-        verbose_name='Publish Date'
-    )
-    
-    # Status
-    STATUS_CHOICES = [
-        ('active', 'Active'),
-        ('inactive', 'Inactive'),
-    ]
-    
-    status = models.CharField(
-        max_length=20,
-        choices=STATUS_CHOICES,
-        default='active',
-        verbose_name='Status'
-    )
-    
-    # Model version
     model_version = models.CharField(
         max_length=50,
-        verbose_name='Model Version',
         null=True,
-        blank=True
+        blank=True,
+        verbose_name='Model Version'
     )
     
-    # Metadata
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name='Created At'
@@ -145,17 +122,15 @@ class TestLogic(models.Model):
 
 
 class AuditException(models.Model):
-    """
-    Test-generated exception model
-    """
-    # Primary key
+    """Audit exception model"""
+    
     exception_id = models.UUIDField(
         primary_key=True,
         default=uuid.uuid4,
-        editable=False
+        editable=False,
+        verbose_name='Exception ID'
     )
     
-    # Related test
     test = models.ForeignKey(
         TestLogic,
         on_delete=models.CASCADE,
@@ -163,7 +138,10 @@ class AuditException(models.Model):
         verbose_name='Test'
     )
     
-    # Entity type
+    test_version = models.IntegerField(
+        verbose_name='Test Version'
+    )
+    
     ENTITY_TYPE_CHOICES = [
         ('Customer', 'Customer'),
         ('CreditApplication', 'Credit Application'),
@@ -177,21 +155,18 @@ class AuditException(models.Model):
         verbose_name='Entity Type'
     )
     
-    # Entity ID
     entity_id = models.CharField(
         max_length=100,
         verbose_name='Entity ID'
     )
     
-    # Exception details
     exception_details = models.TextField(
         verbose_name='Exception Details'
     )
     
-    # Status
     STATUS_CHOICES = [
         ('detected', 'Detected'),
-        ('reviewed', 'Reviewed'),
+        ('recognized', 'Recognized'),
         ('investigated', 'Investigated'),
         ('resolved', 'Resolved'),
         ('false_positive', 'False Positive'),
@@ -204,7 +179,6 @@ class AuditException(models.Model):
         verbose_name='Status'
     )
     
-    # Metadata
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name='Created At'
@@ -219,21 +193,17 @@ class AuditException(models.Model):
         db_table = 'ai_audit_exception'
         verbose_name = 'Audit Exception'
         verbose_name_plural = 'Audit Exceptions'
+        index_together = [('test', 'test_version')]
     
     def __str__(self):
-        return f"Exception: {self.entity_type} - {self.entity_id}"
+        return f"Exception v{self.test_version}: {self.entity_type} - {self.entity_id}"
 
 
 class Feedback(models.Model):
-    """
-    User feedback model
-    """
-    # Primary key
-    id = models.AutoField(
-        primary_key=True
-    )
+    """User feedback model for test improvement"""
     
-    # Related test
+    id = models.AutoField(primary_key=True)
+    
     test = models.ForeignKey(
         TestLogic,
         on_delete=models.CASCADE,
@@ -241,7 +211,6 @@ class Feedback(models.Model):
         verbose_name='Test'
     )
     
-    # Related exception
     exception = models.ForeignKey(
         AuditException,
         on_delete=models.CASCADE,
@@ -249,18 +218,15 @@ class Feedback(models.Model):
         verbose_name='Exception'
     )
     
-    # User information
     user_id = models.CharField(
         max_length=100,
         verbose_name='User ID'
     )
     
-    # Feedback content
     feedback_content = models.TextField(
         verbose_name='Feedback Content'
     )
     
-    # Feedback type
     FEEDBACK_TYPE_CHOICES = [
         ('false_positive', 'False Positive'),
         ('suggestion', 'Suggestion'),
@@ -274,7 +240,6 @@ class Feedback(models.Model):
         verbose_name='Feedback Type'
     )
     
-    # Process status
     PROCESS_STATUS_CHOICES = [
         ('pending', 'Pending'),
         ('processed', 'Processed'),
@@ -287,13 +252,11 @@ class Feedback(models.Model):
         verbose_name='Process Status'
     )
     
-    # Feedback date
     feedback_date = models.DateTimeField(
         default=timezone.now,
         verbose_name='Feedback Date'
     )
     
-    # Metadata
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name='Created At'
