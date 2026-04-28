@@ -84,13 +84,13 @@
                         </div>
                         <div class="btn-group">
                             {% if exception.status == 'detected' %}
-                            <button class="btn" onclick="markStatus('{{ exception.exception_id }}', 'recognized')">
+                            <button class="btn" data-exception-id="{{ exception.exception_id }}" data-status="recognized" onclick="markStatus(this)">
                                 ✓ Recognize
                             </button>
-                            <button class="btn btn-info" onclick="markStatus('{{ exception.exception_id }}', 'investigated')">
+                            <button class="btn btn-info" data-exception-id="{{ exception.exception_id }}" data-status="investigated" onclick="markStatus(this)">
                                 🔍 Investigate
                             </button>
-                            <button class="btn btn-danger" onclick="openFalsePositiveModal('{{ exception.exception_id }}')">
+                            <button class="btn btn-danger" data-exception-id="{{ exception.exception_id }}" onclick="openFalsePositiveModal(this)">
                                 ✗ False Positive
                             </button>
                             {% else %}
@@ -110,6 +110,7 @@
                 <div class="empty-state">
                     <h3>No exceptions found</h3>
                     <p>This test version has not detected any exceptions.</p>
+                    <p><strong>Debug Info:</strong> Test ID: {{ test.test_id }}, Version: {{ test.test_version }}</p>
                 </div>
             {% endif %}
         </div>
@@ -135,41 +136,89 @@
         </div>
     </div>
     
+    <!-- URL 配置变量 - 解决引号冲突 -->
     <script>
+        // 使用模板变量存储URL，避免引号冲突
+        const urls = {
+            updateExceptionStatus: "{% url 'ai_audit:update_exception_status' %}",
+            submitFeedback: "{% url 'ai_audit:submit_feedback' %}",
+            csrfToken: "{{ csrf_token }}"
+        };
+        
         let currentExceptionId = null;
         
-        function markStatus(exceptionId, status) {
-            fetch('{% url 'ai_audit:update_exception_status' %}', {
+        // 使用 data-* 属性传递参数
+        function markStatus(button) {
+            const exceptionId = button.dataset.exceptionId;
+            const status = button.dataset.status;
+            
+            fetch(urls.updateExceptionStatus, {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}'},
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': urls.csrfToken
+                },
                 body: JSON.stringify({exception_id: exceptionId, status: status})
-            }).then(r => r.json()).then(d => d.success && location.reload());
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert('Update failed: ' + (data.error || 'Unknown error'));
+                }
+            });
         }
         
-        function openFalsePositiveModal(exceptionId) { 
-            currentExceptionId = exceptionId; 
-            document.getElementById('falsePositiveModal').style.display = 'block'; 
-            document.getElementById('falsePositiveReason').focus(); 
+        function openFalsePositiveModal(button) {
+            currentExceptionId = button.dataset.exceptionId;
+            document.getElementById('falsePositiveModal').style.display = 'block';
+            document.getElementById('falsePositiveReason').focus();
         }
         
-        function closeFalsePositiveModal() { 
-            document.getElementById('falsePositiveModal').style.display = 'none'; 
-            document.getElementById('falsePositiveReason').value = ''; 
+        function closeFalsePositiveModal() {
+            document.getElementById('falsePositiveModal').style.display = 'none';
+            document.getElementById('falsePositiveReason').value = '';
+            currentExceptionId = null;
         }
         
         function submitFalsePositive() {
             const reason = document.getElementById('falsePositiveReason').value.trim();
-            if (!reason) { alert('Please provide a reason'); return; }
-            fetch('{% url 'ai_audit:submit_feedback' %}', {
+            if (!reason) {
+                alert('Please provide a reason');
+                return;
+            }
+            
+            fetch(urls.submitFeedback, {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}'},
-                body: JSON.stringify({exception_id: currentExceptionId, feedback_content: reason, user_id: 'current_user'})
-            }).then(r => r.json()).then(d => {
-                if (d.success) { alert('Feedback submitted!'); closeFalsePositiveModal(); location.reload(); }
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': urls.csrfToken
+                },
+                body: JSON.stringify({
+                    exception_id: currentExceptionId,
+                    feedback_content: reason,
+                    user_id: 'current_user'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Feedback submitted successfully!');
+                    closeFalsePositiveModal();
+                    location.reload();
+                } else {
+                    alert('Submission failed: ' + (data.error || 'Unknown error'));
+                }
             });
         }
         
-        window.onclick = e => { if (e.target == document.getElementById('falsePositiveModal')) closeFalsePositiveModal(); }
+        window.onclick = function(event) {
+            const modal = document.getElementById('falsePositiveModal');
+            if (event.target == modal) {
+                closeFalsePositiveModal();
+            }
+        }
     </script>
 </body>
 </html>
