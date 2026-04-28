@@ -15,7 +15,20 @@ class TestLogic(models.Model):
         default=uuid.uuid4,
         editable=False
     )
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('accepted', 'Accepted'),
+        ('dropped', 'Dropped'),
+        ('active', 'Active'),
+        ('inactive', 'Inactive'),
+    ]
     
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='pending',
+        verbose_name='Status'
+    )    
     # Test version
     test_version = models.IntegerField(
         default=1,
