@@ -5,77 +5,278 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Exception List - {{ test.test_name }}</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }
-        .container { max-width: 1400px; margin: 0 auto; }
-        .card { background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); padding: 20px; margin-bottom: 20px; }
-        .btn { display: inline-block; padding: 8px 16px; background: #4CAF50; color: white; text-decoration: none; border-radius: 4px; margin-right: 8px; border: none; cursor: pointer; }
-        .btn-danger { background: #f44336; }
-        .btn-info { background: #2196F3; }
-        .status-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; }
-        .status-detected { background: #ffeb3b; color: #333; }
-        .status-recognized { background: #4caf50; color: white; }
-        .status-investigated { background: #ff9800; color: white; }
-        .status-false-positive { background: #f44336; color: white; }
-        .exception-item { border-bottom: 1px solid #eee; padding: 15px 0; }
-        .exception-item:last-child { border-bottom: none; }
-        .modal { display: none; position: fixed; z-index: 1; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background: rgba(0,0,0,0.4); }
-        .modal-content { background: #fefefe; margin: 15% auto; padding: 20px; border: 1px solid #888; width: 80%; max-width: 500px; border-radius: 8px; }
-        .close { color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
-        textarea { width: 100%; height: 120px; margin: 10px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px; }
-        .test-info { background: #f0f8ff; padding: 15px; border-radius: 4px; margin-bottom: 20px; }
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .card {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .btn {
+            display: inline-block;
+            padding: 8px 16px;
+            background-color: #4CAF50;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            margin-right: 8px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .btn:hover {
+            opacity: 0.9;
+        }
+        .btn-danger {
+            background-color: #f44336;
+        }
+        .btn-info {
+            background-color: #2196F3;
+        }
+        .btn-warning {
+            background-color: #ff9800;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status-detected {
+            background-color: #ffeb3b;
+            color: #333;
+        }
+        .status-recognized {
+            background-color: #4caf50;
+            color: white;
+        }
+        .status-investigated {
+            background-color: #ff9800;
+            color: white;
+        }
+        .status-resolved {
+            background-color: #2196F3;
+            color: white;
+        }
+        .status-false-positive {
+            background-color: #f44336;
+            color: white;
+        }
+        .exception-item {
+            border-bottom: 1px solid #eee;
+            padding: 15px 0;
+        }
+        .exception-item:last-child {
+            border-bottom: none;
+        }
+        .exception-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        .exception-meta {
+            color: #666;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        .exception-details {
+            margin-top: 10px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.5);
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: 15% auto;
+            padding: 25px;
+            border: 1px solid #888;
+            width: 80%;
+            max-width: 550px;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .close {
+            color: #aaa;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .close:hover {
+            color: #000;
+        }
+        textarea {
+            width: 100%;
+            height: 150px;
+            margin: 10px 0;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            resize: vertical;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+        }
+        textarea:focus {
+            outline: none;
+            border-color: #2196F3;
+            box-shadow: 0 0 5px rgba(33, 150, 243, 0.3);
+        }
+        .test-info {
+            background-color: #e3f2fd;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #2196F3;
+        }
+        .test-info h2 {
+            margin-top: 0;
+            color: #1565c0;
+        }
+        .header-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+        }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+        }
+        .empty-state h3 {
+            margin-bottom: 10px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <div class="header-bar">
             <h1>Exception List</h1>
-            <div>
-                <button class="btn btn-info" onclick="location.href='{% url 'ai_audit:test_detail' test.test_id %}'">Back to Test</button>
-                <button class="btn" onclick="location.href='{% url 'ai_audit:dashboard' %}'">Dashboard</button>
+            <div class="btn-group">
+                <button class="btn btn-info" onclick="location.href='{% url 'ai_audit:test_detail' test.test_id %}'">
+                    ← Back to Test
+                </button>
+                <button class="btn" onclick="location.href='{% url 'ai_audit:dashboard' %}'">
+                    Dashboard
+                </button>
             </div>
         </div>
         
         <div class="card">
             <div class="test-info">
-                <h2>{{ test.test_name }} (v{{ test.test_version }})</h2>
-                <p><strong>Status:</strong> {{ test.get_status_display }}</p>
+                <h2>{{ test.test_name }}</h2>
+                <div style="display: flex; gap: 20px;">
+                    <span><strong>Version:</strong> {{ test.test_version }}</span>
+                    <span><strong>Status:</strong> {{ test.get_status_display }}</span>
+                    <span><strong>Total Exceptions:</strong> {{ exceptions.count }}</span>
+                </div>
             </div>
         </div>
         
         <div class="card">
-            <h2>Exceptions ({{ exceptions.count }})</h2>
+            <h2>Detected Exceptions</h2>
             
-            {% for exception in exceptions %}
-            <div class="exception-item">
-                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                    <div>
-                        <h3>{{ exception.entity_type }} - {{ exception.entity_id }}</h3>
-                        <span class="status-badge status-{{ exception.status }}">{{ exception.get_status_display }}</span>
+            {% if exceptions %}
+                {% for exception in exceptions %}
+                <div class="exception-item">
+                    <div class="exception-header">
+                        <div>
+                            <h3>{{ exception.entity_type }} - {{ exception.entity_id }}</h3>
+                            <div class="exception-meta">
+                                <span class="status-badge status-{{ exception.status }}">
+                                    {{ exception.get_status_display }}
+                                </span>
+                                <span style="margin-left: 10px;">
+                                    Test Version: <strong>{{ exception.test_version }}</strong>
+                                </span>
+                                <span style="margin-left: 10px;">
+                                    Created: {{ exception.created_at|date:"Y-m-d H:i" }}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="btn-group">
+                            {% if exception.status == 'detected' %}
+                            <button class="btn" onclick="markStatus('{{ exception.exception_id }}', 'recognized')">
+                                ✓ Recognize
+                            </button>
+                            <button class="btn btn-info" onclick="markStatus('{{ exception.exception_id }}', 'investigated')">
+                                🔍 Investigate
+                            </button>
+                            <button class="btn btn-danger" onclick="openFalsePositiveModal('{{ exception.exception_id }}')">
+                                ✗ False Positive
+                            </button>
+                            {% else %}
+                            <button class="btn btn-warning" disabled>
+                                {{ exception.get_status_display }}
+                            </button>
+                            {% endif %}
+                        </div>
                     </div>
-                    <div>
-                        {% if exception.status == 'detected' %}
-                        <button class="btn" onclick="markStatus('{{ exception.exception_id }}', 'recognized')">Recognize</button>
-                        <button class="btn btn-info" onclick="markStatus('{{ exception.exception_id }}', 'investigated')">Investigate</button>
-                        <button class="btn btn-danger" onclick="openFalsePositiveModal('{{ exception.exception_id }}')">False Positive</button>
-                        {% endif %}
+                    <div class="exception-details">
+                        <strong>Exception Details:</strong><br>
+                        {{ exception.exception_details }}
                     </div>
                 </div>
-                <p style="margin-top: 10px; padding: 10px; background: #f9f9f9; border-radius: 4px;">{{ exception.exception_details }}</p>
-            </div>
-            {% empty %}
-            <p>No exceptions found.</p>
-            {% endfor %}
+                {% endfor %}
+            {% else %}
+                <div class="empty-state">
+                    <h3>No exceptions found</h3>
+                    <p>This test version has not detected any exceptions.</p>
+                </div>
+            {% endif %}
         </div>
     </div>
     
-    <!-- False Positive Modal -->
+    <!-- False Positive Feedback Modal -->
     <div id="falsePositiveModal" class="modal">
         <div class="modal-content">
-            <span class="close" onclick="closeFalsePositiveModal()">&times;</span>
-            <h3>Report False Positive</h3>
-            <textarea id="falsePositiveReason" placeholder="Explain why this is a false positive..."></textarea>
-            <button class="btn btn-danger" onclick="submitFalsePositive()">Submit</button>
-            <button class="btn" style="background: #ccc;" onclick="closeFalsePositiveModal()">Cancel</button>
+            <div class="modal-header">
+                <h3>Report False Positive</h3>
+                <span class="close" onclick="closeFalsePositiveModal()">&times;</span>
+            </div>
+            <p>Please explain why this exception is a false positive:</p>
+            <textarea id="falsePositiveReason" placeholder="Provide your reasoning..."></textarea>
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button class="btn" style="background-color: #ccc;" onclick="closeFalsePositiveModal()">
+                    Cancel
+                </button>
+                <button class="btn btn-danger" onclick="submitFalsePositive()">
+                    Submit Feedback
+                </button>
+            </div>
         </div>
     </div>
     
@@ -85,27 +286,80 @@
         function markStatus(exceptionId, status) {
             fetch('{% url 'ai_audit:update_exception_status' %}', {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}'},
-                body: JSON.stringify({exception_id: exceptionId, status: status})
-            }).then(r => r.json()).then(d => d.success && location.reload());
-        }
-        
-        function openFalsePositiveModal(exceptionId) { currentExceptionId = exceptionId; document.getElementById('falsePositiveModal').style.display = 'block'; }
-        function closeFalsePositiveModal() { document.getElementById('falsePositiveModal').style.display = 'none'; document.getElementById('falsePositiveReason').value = ''; }
-        
-        function submitFalsePositive() {
-            const reason = document.getElementById('falsePositiveReason').value;
-            if (!reason) { alert('Enter reason'); return; }
-            fetch('{% url 'ai_audit:submit_feedback' %}', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}'},
-                body: JSON.stringify({exception_id: currentExceptionId, feedback_content: reason, user_id: 'current_user'})
-            }).then(r => r.json()).then(d => {
-                if (d.success) { alert('Feedback submitted!'); closeFalsePositiveModal(); location.reload(); }
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify({
+                    exception_id: exceptionId,
+                    status: status
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert('Update failed: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                alert('Network error: ' + error.message);
             });
         }
         
-        window.onclick = e => { if (e.target == document.getElementById('falsePositiveModal')) closeFalsePositiveModal(); }
+        function openFalsePositiveModal(exceptionId) {
+            currentExceptionId = exceptionId;
+            document.getElementById('falsePositiveModal').style.display = 'block';
+            document.getElementById('falsePositiveReason').focus();
+        }
+        
+        function closeFalsePositiveModal() {
+            document.getElementById('falsePositiveModal').style.display = 'none';
+            document.getElementById('falsePositiveReason').value = '';
+            currentExceptionId = null;
+        }
+        
+        function submitFalsePositive() {
+            const reason = document.getElementById('falsePositiveReason').value.trim();
+            if (!reason) {
+                alert('Please provide a reason for marking this as false positive');
+                return;
+            }
+            
+            fetch('{% url 'ai_audit:submit_feedback' %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify({
+                    exception_id: currentExceptionId,
+                    feedback_content: reason,
+                    user_id: 'current_user'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Feedback submitted successfully!\n\nA new test version will be generated based on your feedback.');
+                    closeFalsePositiveModal();
+                    location.reload();
+                } else {
+                    alert('Submission failed: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                alert('Network error: ' + error.message);
+            });
+        }
+        
+        window.onclick = function(event) {
+            const modal = document.getElementById('falsePositiveModal');
+            if (event.target == modal) {
+                closeFalsePositiveModal();
+            }
+        }
     </script>
 </body>
 </html>
