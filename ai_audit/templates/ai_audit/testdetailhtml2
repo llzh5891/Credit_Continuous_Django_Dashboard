@@ -45,9 +45,10 @@
             
             <div class="test-section">
                 <h3>⚠️ Exception Rules</h3>
-                {% if test.exceptions %}
-                <ul>{% for exc in test.exceptions %}<li>{{ exc }}</li>{% endfor %}</ul>
-                {% else %}<p>No exception rules</p>{% endif %}
+                <p>{{ test.exceptions|length }} exception rules defined.</p>
+                <button class="btn btn-info" data-url="{% url 'ai_audit:exception_list' test.test_id %}" onclick="location.href=this.dataset.url">
+                    View Detected Exceptions
+                </button>
             </div>
             
             <div class="test-section">
@@ -60,7 +61,9 @@
         
         <div class="card">
             <h2>Actions</h2>
-            <button class="btn btn-info" onclick="location.href='{% url 'ai_audit:exception_list' test.test_id %}'">View Exception List</button>
+            <button class="btn btn-info" data-url="{% url 'ai_audit:exception_list' test.test_id %}" onclick="location.href=this.dataset.url">
+                View Exception List
+            </button>
         </div>
     </div>
 </body>
