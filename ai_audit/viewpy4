@@ -295,33 +295,38 @@ def generate_tests(request):
                 status='pending'
             )
             
-            # 根据AI返回的异常规则创建实际的异常记录
-            # 使用实际的客户数据来创建异常
-            all_customers = list(Customer.objects.all())
+            # 确保创建异常记录
+            print(f"DEBUG: Creating {len(exceptions_data)} exceptions for test {test.test_id}")
             
             for i, exception_rule in enumerate(exceptions_data):
-                # 确定实体类型和ID
                 entity_type = 'Customer'
                 entity_id = str(uuid.uuid4())
                 
                 # 如果有实际客户数据，使用实际客户ID
+                all_customers = list(Customer.objects.all())
                 if all_customers:
                     customer = all_customers[i % len(all_customers)]
                     entity_id = str(customer.customer_id)
                 
                 # 创建异常记录
-                AuditException.objects.create(
+                exception = AuditException.objects.create(
                     test=test,
                     test_version=test_version,
                     entity_type=entity_type,
                     entity_id=entity_id,
                     exception_details=f"Exception detected: {exception_rule}"
                 )
+                print(f"DEBUG: Created exception {exception.exception_id}")
+            
+            # 验证创建结果
+            created_exceptions = AuditException.objects.filter(test=test)
+            print(f"DEBUG: Total exceptions created: {created_exceptions.count()}")
             
         else:
             return HttpResponse("API call failed")
         
     except Exception as e:
+        print(f"DEBUG: Error creating test: {str(e)}")
         return HttpResponse(f"Error: {str(e)}")
     
     return redirect('ai_audit:dashboard')
