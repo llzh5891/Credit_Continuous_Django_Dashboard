@@ -1,3 +1,110 @@
+#######################
+def generate_tests(request):
+    """
+    Generate test logic
+    """
+    try:
+        # Get sample data from database
+        customers = list(Customer.objects.all()[:5].values())
+        credit_applications = list(CreditApplication.objects.all()[:5].values())
+        facilities = list(Facility.objects.all()[:5].values())
+        agreements = list(AgreementPDF.objects.all()[:5].values())
+        
+        # Convert non-serializable objects to strings
+        def convert_objects(data):
+            from datetime import date, datetime
+            from decimal import Decimal
+            
+            for item in data:
+                for key, value in item.items():
+                    # Skip None values
+                    if value is None:
+                        continue
+                    # Convert UUID objects to strings
+                    if hasattr(value, 'hex') and hasattr(value, 'fields'):
+                        item[key] = str(value)
+                    # Convert date objects to strings
+                    elif isinstance(value, date) and not isinstance(value, datetime):
+                        item[key] = value.isoformat()
+                    # Convert datetime objects to strings
+                    elif isinstance(value, datetime):
+                        if value.tzinfo is not None:
+                            item[key] = value.isoformat()
+                        else:
+                            item[key] = value.isoformat()
+                    # Convert Decimal objects to strings
+                    elif isinstance(value, Decimal):
+                        item[key] = str(value)
+            return data
+        
+        # Convert objects in all data sets
+        customers = convert_objects(customers)
+        credit_applications = convert_objects(credit_applications)
+        facilities = convert_objects(facilities)
+        agreements = convert_objects(agreements)
+        
+        # Create sample data dictionary
+        sample_data = {
+            'customers': customers,
+            'credit_applications': credit_applications,
+            'facilities': facilities,
+            'agreements': agreements
+        }
+        
+        # Call API to generate test logic
+        api = get_api_instance()
+        response = api.generate_test_logic(sample_data)
+        
+        # Check if response is a string and convert to dict
+        if isinstance(response, str):
+            try:
+                response = json.loads(response)
+            except json.JSONDecodeError:
+                return HttpResponse("Error: API response is not valid JSON")
+        
+        if response:
+            # Parse API response - assuming the response is a dictionary with test design
+            # AI model returns: {'objective':[], 'how to test':[], 'exception':[], 'evidence':[]}
+            
+            # Extract structured data
+            objectives = response.get('objective', [])
+            how_to_test = response.get('how to test', [])
+            exceptions = response.get('exception', [])
+            evidence = response.get('evidence', [])
+            
+            # Extract objective as rationale
+            test_rationale = '\n'.join(objectives) if objectives else "No objectives provided"
+            
+            # Convert the entire response to a string for backup
+            test_content = json.dumps(response, indent=2)
+            
+            # Create new test logic with structured fields
+            test_id = generate_test_id()
+            TestLogic.objects.create(
+                test_id=test_id,
+                test_version=1,
+                test_name=f"Audit Test {test_id}",
+                test_description="AI-generated audit test",
+                column_to_use="Multiple columns",
+                objectives=objectives,
+                how_to_test=how_to_test,
+                exceptions=exceptions,
+                evidence=evidence,
+                test_logic=test_content,
+                ai_rationale=test_rationale,
+                model_version="GPT-5"
+            )
+        else:
+            # API call failed, return error message
+            return HttpResponse("API call failed. Please check API configuration.")
+        
+    except Exception as e:
+        # Return error message
+        return HttpResponse(f"Error: {str(e)}")
+    
+    return redirect('ai_audit:dashboard')
+#####################
+
 from django.shortcuts import render, get_object_or_404, redirect
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
