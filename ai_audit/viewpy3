@@ -84,7 +84,7 @@ def update_exception_status(request):
 
 @csrf_exempt
 def submit_feedback(request):
-    """Submit false positive feedback (AJAX endpoint)"""
+    """Submit false positive feedback"""
     if request.method == 'POST':
         data = json.loads(request.body)
         exception_id = data.get('exception_id')
@@ -126,8 +126,11 @@ def submit_feedback(request):
                 test_rationale = '\n'.join(objectives) if objectives else "No objectives"
                 test_content = json.dumps(new_logic, indent=2)
                 
+                # Get next version
                 next_version = get_next_version(exception.test.test_id)
-                TestLogic.objects.create(
+                
+                # Create new version of test
+                new_test = TestLogic.objects.create(
                     test_id=exception.test.test_id,
                     test_version=next_version,
                     test_name=exception.test.test_name,
@@ -139,8 +142,19 @@ def submit_feedback(request):
                     evidence=evidence,
                     test_logic=test_content,
                     ai_rationale=test_rationale,
-                    model_version=exception.test.model_version
+                    model_version=exception.test.model_version,
+                    status='pending'
                 )
+                
+                # Create mock exceptions for the new version
+                for exception_rule in exceptions_data:
+                    AuditException.objects.create(
+                        test=new_test,
+                        test_version=next_version,
+                        entity_type='Customer',
+                        entity_id=str(uuid.uuid4()),
+                        exception_details=f"Exception detected v{next_version}: {exception_rule}"
+                    )
             
             return JsonResponse({'success': True})
         except AuditException.DoesNotExist:
@@ -149,7 +163,6 @@ def submit_feedback(request):
             return JsonResponse({'success': False, 'error': str(e)})
     
     return JsonResponse({'success': False, 'error': 'Invalid request'})
-
 
 @csrf_exempt
 def update_test_status(request):
