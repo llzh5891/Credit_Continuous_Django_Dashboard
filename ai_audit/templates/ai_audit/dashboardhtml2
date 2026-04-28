@@ -48,8 +48,8 @@
                         </div>
                     </div>
                     <div class="action-buttons">
-                        <!-- View Details button -->
-                        <button class="btn btn-info" onclick="location.href='{% url 'ai_audit:test_detail' test.test_id %}'">
+                        <!-- 使用 data-url 属性避免引号冲突 -->
+                        <button class="btn btn-info" data-url="{% url 'ai_audit:test_detail' test.test_id %}" onclick="location.href=this.dataset.url">
                             View Details
                         </button>
                         
@@ -62,8 +62,7 @@
                         </button>
                         {% endif %}
                         
-                        <!-- View Exceptions button (always visible) -->
-                        <button class="btn btn-warning" onclick="location.href='{% url 'ai_audit:exception_list' test.test_id %}'">
+                        <button class="btn btn-warning" data-url="{% url 'ai_audit:exception_list' test.test_id %}" onclick="location.href=this.dataset.url">
                             View Exceptions
                         </button>
                     </div>
@@ -88,10 +87,10 @@
                         </div>
                     </div>
                     <div class="action-buttons">
-                        <button class="btn btn-info" onclick="location.href='{% url 'ai_audit:exception_detail' exception.exception_id %}'">
+                        <button class="btn btn-info" data-url="{% url 'ai_audit:exception_detail' exception.exception_id %}" onclick="location.href=this.dataset.url">
                             View Details
                         </button>
-                        <button class="btn btn-warning" onclick="location.href='{% url 'ai_audit:exception_list' exception.test.test_id %}'">
+                        <button class="btn btn-warning" data-url="{% url 'ai_audit:exception_list' exception.test.test_id %}" onclick="location.href=this.dataset.url">
                             View Test Exceptions
                         </button>
                     </div>
