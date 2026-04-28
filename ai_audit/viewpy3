@@ -10,9 +10,7 @@ from agreements.models import AgreementPDF
 
 
 def dashboard(request):
-    """
-    AI Audit Dashboard
-    """
+    """AI Audit Dashboard - Main entry point"""
     tests = TestLogic.objects.order_by('-created_at')
     exceptions = AuditException.objects.filter(status='detected').order_by('-created_at')[:10]
     
@@ -25,9 +23,18 @@ def dashboard(request):
 
 
 def test_detail(request, test_id):
-    """
-    Test Details
-    """
+    """Test Details - Overview page"""
+    test = get_object_or_404(TestLogic, test_id=test_id)
+    
+    context = {
+        'test': test
+    }
+    
+    return render(request, 'ai_audit/test_detail.html', context)
+
+
+def exception_list(request, test_id):
+    """Exception List - Main exception handling page"""
     test = get_object_or_404(TestLogic, test_id=test_id)
     exceptions = test.audit_exceptions.all().order_by('-created_at')
     
@@ -36,13 +43,11 @@ def test_detail(request, test_id):
         'exceptions': exceptions
     }
     
-    return render(request, 'ai_audit/test_detail.html', context)
+    return render(request, 'ai_audit/exception_list.html', context)
 
 
 def exception_detail(request, exception_id):
-    """
-    Exception Details
-    """
+    """Exception Detail - Detailed view only (no actions)"""
     exception = get_object_or_404(AuditException, exception_id=exception_id)
     entity = get_entity_by_id(exception.entity_type, exception.entity_id)
     entity_data = get_entity_data(entity)
@@ -58,9 +63,7 @@ def exception_detail(request, exception_id):
 
 @csrf_exempt
 def update_exception_status(request):
-    """
-    Update exception status
-    """
+    """Update exception status (AJAX endpoint)"""
     if request.method == 'POST':
         data = json.loads(request.body)
         exception_id = data.get('exception_id')
@@ -81,9 +84,7 @@ def update_exception_status(request):
 
 @csrf_exempt
 def submit_feedback(request):
-    """
-    Submit feedback for false positive
-    """
+    """Submit false positive feedback (AJAX endpoint)"""
     if request.method == 'POST':
         data = json.loads(request.body)
         exception_id = data.get('exception_id')
@@ -93,7 +94,7 @@ def submit_feedback(request):
         try:
             exception = AuditException.objects.get(exception_id=exception_id)
             
-            # Create feedback
+            # Create feedback record
             feedback = Feedback.objects.create(
                 test=exception.test,
                 exception=exception,
@@ -106,14 +107,10 @@ def submit_feedback(request):
             exception.status = 'false_positive'
             exception.save()
             
-            # Generate new version of test logic based on feedback
+            # Generate new version based on feedback
             api = get_api_instance()
-            new_logic = api.update_test_logic(
-                exception.test.test_logic,
-                feedback_content
-            )
+            new_logic = api.update_test_logic(exception.test.test_logic, feedback_content)
             
-            # Check if response is a string and convert to dict
             if isinstance(new_logic, str):
                 try:
                     new_logic = json.loads(new_logic)
@@ -121,19 +118,14 @@ def submit_feedback(request):
                     new_logic = None
             
             if new_logic:
-                # Extract structured data
                 objectives = new_logic.get('objective', [])
                 how_to_test = new_logic.get('how to test', [])
                 exceptions_data = new_logic.get('exception', [])
                 evidence = new_logic.get('evidence', [])
                 
-                # Extract objective as rationale
-                test_rationale = '\n'.join(objectives) if objectives else "No objectives provided"
-                
-                # Convert the entire response to a string for backup
+                test_rationale = '\n'.join(objectives) if objectives else "No objectives"
                 test_content = json.dumps(new_logic, indent=2)
                 
-                # Create new version of test
                 next_version = get_next_version(exception.test.test_id)
                 TestLogic.objects.create(
                     test_id=exception.test.test_id,
@@ -161,9 +153,7 @@ def submit_feedback(request):
 
 @csrf_exempt
 def update_test_status(request):
-    """
-    Update test status (e.g., mark as accepted)
-    """
+    """Update test status (AJAX endpoint)"""
     if request.method == 'POST':
         data = json.loads(request.body)
         test_id = data.get('test_id')
@@ -184,9 +174,7 @@ def update_test_status(request):
 
 @csrf_exempt
 def drop_test(request):
-    """
-    Drop a test with reason
-    """
+    """Drop test with reason (AJAX endpoint)"""
     if request.method == 'POST':
         data = json.loads(request.body)
         test_id = data.get('test_id')
@@ -195,11 +183,7 @@ def drop_test(request):
         try:
             test = TestLogic.objects.get(test_id=test_id)
             test.status = 'dropped'
-            # Store drop reason in test_description or a new field
-            if test.test_description:
-                test.test_description = f"{test.test_description}\n\nDropped Reason: {reason}"
-            else:
-                test.test_description = f"Dropped Reason: {reason}"
+            test.test_description = f"{test.test_description or ''}\n\nDropped Reason: {reason}".strip()
             test.save()
             return JsonResponse({'success': True})
         except TestLogic.DoesNotExist:
@@ -211,9 +195,7 @@ def drop_test(request):
 
 
 def generate_tests(request):
-    """
-    Generate test logic
-    """
+    """Generate new test logic via AI"""
     try:
         # Get sample data from database
         customers = list(Customer.objects.all()[:5].values())
@@ -221,40 +203,30 @@ def generate_tests(request):
         facilities = list(Facility.objects.all()[:5].values())
         agreements = list(AgreementPDF.objects.all()[:5].values())
         
-        # Convert non-serializable objects to strings
+        # Convert non-serializable objects
         def convert_objects(data):
             from datetime import date, datetime
             from decimal import Decimal
             
             for item in data:
                 for key, value in item.items():
-                    # Skip None values
                     if value is None:
                         continue
-                    # Convert UUID objects to strings
                     if hasattr(value, 'hex') and hasattr(value, 'fields'):
                         item[key] = str(value)
-                    # Convert date objects to strings
                     elif isinstance(value, date) and not isinstance(value, datetime):
                         item[key] = value.isoformat()
-                    # Convert datetime objects to strings
                     elif isinstance(value, datetime):
-                        if value.tzinfo is not None:
-                            item[key] = value.isoformat()
-                        else:
-                            item[key] = value.isoformat()
-                    # Convert Decimal objects to strings
+                        item[key] = value.isoformat()
                     elif isinstance(value, Decimal):
                         item[key] = str(value)
             return data
         
-        # Convert objects in all data sets
         customers = convert_objects(customers)
         credit_applications = convert_objects(credit_applications)
         facilities = convert_objects(facilities)
         agreements = convert_objects(agreements)
         
-        # Create sample data dictionary
         sample_data = {
             'customers': customers,
             'credit_applications': credit_applications,
@@ -262,34 +234,25 @@ def generate_tests(request):
             'agreements': agreements
         }
         
-        # Call API to generate test logic
+        # Call API
         api = get_api_instance()
         response = api.generate_test_logic(sample_data)
         
-        # Check if response is a string and convert to dict
         if isinstance(response, str):
             try:
                 response = json.loads(response)
             except json.JSONDecodeError:
-                return HttpResponse("Error: API response is not valid JSON")
+                return HttpResponse("Error: Invalid JSON response")
         
         if response:
-            # Parse API response - assuming the response is a dictionary with test design
-            # AI model returns: {'objective':[], 'how to test':[], 'exception':[], 'evidence':[]}
-            
-            # Extract structured data
             objectives = response.get('objective', [])
             how_to_test = response.get('how to test', [])
             exceptions_data = response.get('exception', [])
             evidence = response.get('evidence', [])
             
-            # Extract objective as rationale
-            test_rationale = '\n'.join(objectives) if objectives else "No objectives provided"
-            
-            # Convert the entire response to a string for backup
+            test_rationale = '\n'.join(objectives) if objectives else "No objectives"
             test_content = json.dumps(response, indent=2)
             
-            # Create new test logic with structured fields
             test_id = generate_test_id()
             TestLogic.objects.create(
                 test_id=test_id,
@@ -304,14 +267,12 @@ def generate_tests(request):
                 test_logic=test_content,
                 ai_rationale=test_rationale,
                 model_version="GPT-5",
-                status='pending'  # Set initial status to pending
+                status='pending'
             )
         else:
-            # API call failed, return error message
-            return HttpResponse("API call failed. Please check API configuration.")
+            return HttpResponse("API call failed")
         
     except Exception as e:
-        # Return error message
         return HttpResponse(f"Error: {str(e)}")
     
     return redirect('ai_audit:dashboard')
