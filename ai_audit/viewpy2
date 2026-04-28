@@ -1,0 +1,247 @@
+from django.shortcuts import render, get_object_or_404, redirect
+from django.http import JsonResponse, HttpResponse
+from django.views.decorators.csrf import csrf_exempt
+import json
+from .models import TestLogic, AuditException, Feedback
+from .api import get_api_instance
+from .utils import get_entity_by_id, get_entity_data, get_next_version, generate_test_id
+from credit_app.models import Customer, CreditApplication, Facility
+from agreements.models import AgreementPDF
+
+
+def dashboard(request):
+    """
+    AI Audit Dashboard
+    """
+    tests = TestLogic.objects.order_by('-created_at')
+    exceptions = AuditException.objects.filter(status='detected').order_by('-created_at')[:10]
+    
+    context = {
+        'tests': tests,
+        'exceptions': exceptions
+    }
+    
+    return render(request, 'ai_audit/dashboard.html', context)
+
+
+def test_detail(request, test_id):
+    """
+    Test Details
+    """
+    test = get_object_or_404(TestLogic, test_id=test_id)
+    exceptions = test.exceptions.all().order_by('-created_at')
+    
+    context = {
+        'test': test,
+        'exceptions': exceptions
+    }
+    
+    return render(request, 'ai_audit/test_detail.html', context)
+
+
+def exception_detail(request, exception_id):
+    """
+    Exception Details
+    """
+    exception = get_object_or_404(AuditException, exception_id=exception_id)
+    entity = get_entity_by_id(exception.entity_type, exception.entity_id)
+    entity_data = get_entity_data(entity)
+    
+    context = {
+        'exception': exception,
+        'entity': entity,
+        'entity_data': entity_data
+    }
+    
+    return render(request, 'ai_audit/exception_detail.html', context)
+
+
+@csrf_exempt
+def update_exception_status(request):
+    """
+    Update exception status
+    """
+    if request.method == 'POST':
+        data = json.loads(request.body)
+        exception_id = data.get('exception_id')
+        status = data.get('status')
+        
+        try:
+            exception = AuditException.objects.get(exception_id=exception_id)
+            exception.status = status
+            exception.save()
+            return JsonResponse({'success': True})
+        except AuditException.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Exception not found'})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    
+    return JsonResponse({'success': False, 'error': 'Invalid request'})
+
+
+@csrf_exempt
+def submit_feedback(request):
+    """
+    Submit feedback
+    """
+    if request.method == 'POST':
+        data = json.loads(request.body)
+        exception_id = data.get('exception_id')
+        feedback_content = data.get('feedback_content')
+        user_id = data.get('user_id', 'anonymous')
+        
+        try:
+            exception = AuditException.objects.get(exception_id=exception_id)
+            
+            # Create feedback
+            feedback = Feedback.objects.create(
+                test=exception.test,
+                exception=exception,
+                user_id=user_id,
+                feedback_content=feedback_content,
+                feedback_type='false_positive'
+            )
+            
+            # Update exception status
+            exception.status = 'false_positive'
+            exception.save()
+            
+            # Generate new version of test logic
+            api = get_api_instance()
+            new_logic = api.update_test_logic(
+                exception.test.test_logic,
+                feedback_content
+            )
+            
+            # Check if response is a string and convert to dict
+            if isinstance(new_logic, str):
+                try:
+                    new_logic = json.loads(new_logic)
+                except json.JSONDecodeError:
+                    new_logic = None
+            
+            if new_logic:
+                # Convert the entire response to a string to store as test logic
+                test_content = json.dumps(new_logic, indent=2)
+                
+                # Extract objective as rationale
+                objectives = new_logic.get('objective', [])
+                test_rationale = '\n'.join(objectives) if objectives else "No objectives provided"
+                
+                # Create new version of test
+                next_version = get_next_version(exception.test.test_id)
+                TestLogic.objects.create(
+                    test_id=exception.test.test_id,
+                    test_version=next_version,
+                    test_name=exception.test.test_name,
+                    test_description=exception.test.test_description,
+                    column_to_use=exception.test.column_to_use,
+                    test_logic=test_content,
+                    ai_rationale=test_rationale,
+                    model_version=exception.test.model_version
+                )
+            
+            return JsonResponse({'success': True})
+        except AuditException.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Exception not found'})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    
+    return JsonResponse({'success': False, 'error': 'Invalid request'})
+
+
+def generate_tests(request):
+    """
+    Generate test logic
+    """
+    try:
+        # Get sample data from database
+        customers = list(Customer.objects.all()[:5].values())
+        credit_applications = list(CreditApplication.objects.all()[:5].values())
+        facilities = list(Facility.objects.all()[:5].values())
+        agreements = list(AgreementPDF.objects.all()[:5].values())
+        
+        # Convert non-serializable objects to strings
+        def convert_objects(data):
+            from datetime import date, datetime
+            from decimal import Decimal
+            
+            for item in data:
+                for key, value in item.items():
+                    # Skip None values
+                    if value is None:
+                        continue
+                    # Convert UUID objects to strings
+                    if hasattr(value, 'hex') and hasattr(value, 'fields'):
+                        item[key] = str(value)
+                    # Convert date objects to strings
+                    elif isinstance(value, date) and not isinstance(value, datetime):
+                        item[key] = value.isoformat()
+                    # Convert datetime objects to strings
+                    elif isinstance(value, datetime):
+                        if value.tzinfo is not None:
+                            item[key] = value.isoformat()
+                        else:
+                            item[key] = value.isoformat()
+                    # Convert Decimal objects to strings
+                    elif isinstance(value, Decimal):
+                        item[key] = str(value)
+            return data
+        
+        # Convert objects in all data sets
+        customers = convert_objects(customers)
+        credit_applications = convert_objects(credit_applications)
+        facilities = convert_objects(facilities)
+        agreements = convert_objects(agreements)
+        
+        # Create sample data dictionary
+        sample_data = {
+            'customers': customers,
+            'credit_applications': credit_applications,
+            'facilities': facilities,
+            'agreements': agreements
+        }
+        
+        # Call API to generate test logic
+        api = get_api_instance()
+        response = api.generate_test_logic(sample_data)
+        
+        # Check if response is a string and convert to dict
+        if isinstance(response, str):
+            try:
+                response = json.loads(response)
+            except json.JSONDecodeError:
+                return HttpResponse("Error: API response is not valid JSON")
+        
+        if response:
+            # Parse API response - assuming the response is a dictionary with test design
+            # AI model returns: {'objective':[], 'how to test':[], 'exception':[], 'evidence':[]}
+            
+            # Convert the entire response to a string to store as test logic
+            test_content = json.dumps(response, indent=2)
+            
+            # Extract objective as rationale
+            objectives = response.get('objective', [])
+            test_rationale = '\n'.join(objectives) if objectives else "No objectives provided"
+            
+            # Create new test logic
+            test_id = generate_test_id()
+            TestLogic.objects.create(
+                test_id=test_id,
+                test_version=1,
+                test_name=f"Audit Test {test_id}",
+                test_description="AI-generated audit test",
+                column_to_use="Multiple columns",
+                test_logic=test_content,
+                ai_rationale=test_rationale,
+                model_version="GPT-5"
+            )
+        else:
+            # API call failed, return error message
+            return HttpResponse("API call failed. Please check API configuration.")
+        
+    except Exception as e:
+        # Return error message
+        return HttpResponse(f"Error: {str(e)}")
+    
+    return redirect('ai_audit:dashboard')
