@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Details</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .card {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .btn {
+            display: inline-block;
+            padding: 8px 16px;
+            background-color: #4CAF50;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            margin-right: 10px;
+        }
+        .btn-info {
+            background-color: #2196F3;
+        }
+        .exception-item {
+            border-bottom: 1px solid #eee;
+            padding: 10px 0;
+        }
+        .exception-item:last-child {
+            border-bottom: none;
+        }
+        .test-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+        }
+        .test-section h3 {
+            color: #333;
+            border-bottom: 2px solid #2196F3;
+            padding-bottom: 5px;
+            margin-top: 0;
+        }
+        .test-section ul {
+            list-style-type: disc;
+            padding-left: 20px;
+        }
+        .test-section li {
+            margin-bottom: 8px;
+            line-height: 1.5;
+        }
+        .empty-message {
+            color: #888;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Test Details</h1>
+        
+        <div class="card">
+            <h2>{{ test.test_name }} (v{{ test.test_version }})</h2>
+            <p><strong>Description:</strong> {{ test.test_description|default:"No description" }}</p>
+            <p><strong>Column to Use:</strong> {{ test.column_to_use }}</p>
+            <p><strong>AI Rationale:</strong> {{ test.ai_rationale|default:"None" }}</p>
+            <p><strong>Publish Date:</strong> {{ test.test_logic_publish_date }}</p>
+            <p><strong>Status:</strong> {{ test.get_status_display }}</p>
+            <a href="{% url 'ai_audit:dashboard' %}" class="btn">Back to Dashboard</a>
+        </div>
+        
+        <div class="card">
+            <h2>Test Design</h2>
+            
+            <div class="test-section">
+                <h3>🎯 Objectives</h3>
+                {% if test.objectives %}
+                <ul>
+                    {% for objective in test.objectives %}
+                    <li>{{ objective }}</li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="empty-message">No objectives available</p>
+                {% endif %}
+            </div>
+            
+            <div class="test-section">
+                <h3>📋 How to Test</h3>
+                {% if test.how_to_test %}
+                <ul>
+                    {% for step in test.how_to_test %}
+                    <li>{{ step }}</li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="empty-message">No test steps available</p>
+                {% endif %}
+            </div>
+            
+            <div class="test-section">
+                <h3>⚠️ Exceptions to Look For</h3>
+                {% if test.exceptions %}
+                <ul>
+                    {% for exception in test.exceptions %}
+                    <li>{{ exception }}</li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="empty-message">No exceptions available</p>
+                {% endif %}
+            </div>
+            
+            <div class="test-section">
+                <h3>📝 Evidence Required</h3>
+                {% if test.evidence %}
+                <ul>
+                    {% for item in test.evidence %}
+                    <li>{{ item }}</li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="empty-message">No evidence requirements available</p>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="card">
+            <h2>Related Exceptions</h2>
+            {% if test.audit_exceptions.all %}
+                {% for exception in test.audit_exceptions.all %}
+                <div class="exception-item">
+                    <h3>{{ exception.entity_type }} - {{ exception.entity_id }}</h3>
+                    <p>{{ exception.exception_details }}</p>
+                    <p><strong>Status:</strong> {{ exception.get_status_display }}</p>
+                    <a href="{% url 'ai_audit:exception_detail' exception.exception_id %}" class="btn btn-info">View Details</a>
+                </div>
+                {% endfor %}
+            {% else %}
+                <p class="empty-message">No exceptions found for this test</p>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>
