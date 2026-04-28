@@ -193,7 +193,10 @@ class AuditException(models.Model):
         db_table = 'ai_audit_exception'
         verbose_name = 'Audit Exception'
         verbose_name_plural = 'Audit Exceptions'
-        index_together = [('test', 'test_version')]
+        # Fixed: 使用 indexes 替代 index_together
+        indexes = [
+            models.Index(fields=['test', 'test_version']),
+        ]
     
     def __str__(self):
         return f"Exception v{self.test_version}: {self.entity_type} - {self.entity_id}"
