@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Audit Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #333;
+        }
+        .card {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .test-item {
+            border-bottom: 1px solid #eee;
+            padding: 15px 0;
+        }
+        .test-item:last-child {
+            border-bottom: none;
+        }
+        .btn {
+            display: inline-block;
+            padding: 8px 16px;
+            background-color: #4CAF50;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            margin-right: 8px;
+            border: none;
+            cursor: pointer;
+        }
+        .btn-danger {
+            background-color: #f44336;
+        }
+        .btn-info {
+            background-color: #2196F3;
+        }
+        .btn-warning {
+            background-color: #ff9800;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status-pending {
+            background-color: #ffeb3b;
+            color: #333;
+        }
+        .status-accepted {
+            background-color: #4caf50;
+            color: white;
+        }
+        .status-dropped {
+            background-color: #f44336;
+            color: white;
+        }
+        .test-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .test-meta {
+            color: #666;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.4);
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: 15% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+            max-width: 500px;
+            border-radius: 8px;
+        }
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        textarea {
+            width: 100%;
+            height: 100px;
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>AI Audit Dashboard</h1>
+        
+        <div class="card">
+            <h2>Generated Tests</h2>
+            <a href="{% url 'ai_audit:generate_tests' %}" class="btn">Generate New Test</a>
+            
+            {% for test in tests %}
+            <div class="test-item">
+                <div class="test-header">
+                    <div>
+                        <h3>{{ test.test_name }} (v{{ test.test_version }})</h3>
+                        <div class="test-meta">
+                            <span class="status-badge status-{{ test.status }}">{{ test.get_status_display }}</span>
+                            <span style="margin-left: 10px;">Created: {{ test.created_at|date:"Y-m-d H:i" }}</span>
+                        </div>
+                    </div>
+                    <div>
+                        {% if test.status == 'pending' %}
+                        <button class="btn btn-info" onclick="viewDetails('{{ test.test_id }}')">View Details</button>
+                        <button class="btn" onclick="markAccepted('{{ test.test_id }}')">Recognize</button>
+                        <button class="btn btn-danger" onclick="openDropModal('{{ test.test_id }}')">Drop</button>
+                        {% endif %}
+                    </div>
+                </div>
+                <p style="margin-top: 10px;">{{ test.test_description|default:"No description" }}</p>
+                <p><strong>Objectives:</strong> {{ test.objectives|length }} items</p>
+                <p><strong>Exceptions Found:</strong> {{ test.audit_exceptions.count }}</p>
+            </div>
+            {% empty %}
+            <p>No tests generated yet. Click "Generate New Test" to create one.</p>
+            {% endfor %}
+        </div>
+        
+        <div class="card">
+            <h2>Unprocessed Exceptions</h2>
+            {% for exception in exceptions %}
+            <div class="test-item">
+                <h3>{{ exception.entity_type }} - {{ exception.entity_id }}</h3>
+                <p>{{ exception.exception_details }}</p>
+                <p><strong>Test:</strong> {{ exception.test.test_name }}</p>
+                <p><strong>Status:</strong> {{ exception.get_status_display }}</p>
+                <button class="btn btn-info" onclick="location.href='{% url 'ai_audit:exception_detail' exception.exception_id %}'">View Details</button>
+            </div>
+            {% empty %}
+            <p>No exceptions found.</p>
+            {% endfor %}
+        </div>
+    </div>
+    
+    <!-- Drop Confirmation Modal -->
+    <div id="dropModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeDropModal()">&times;</span>
+            <h3>Confirm Drop Test</h3>
+            <p>Please provide a reason for dropping this test:</p>
+            <textarea id="dropReason" placeholder="Enter reason for dropping..."></textarea>
+            <button class="btn btn-danger" onclick="confirmDrop()">Confirm Drop</button>
+            <button class="btn" style="background-color: #ccc;" onclick="closeDropModal()">Cancel</button>
+        </div>
+    </div>
+    
+    <script>
+        let currentTestId = null;
+        
+        function viewDetails(testId) {
+            window.location.href = `/ai_audit/test/${testId}/`;
+        }
+        
+        function markAccepted(testId) {
+            fetch('{% url 'ai_audit:update_test_status' %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify({
+                    test_id: testId,
+                    status: 'accepted'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert('Update failed: ' + data.error);
+                }
+            });
+        }
+        
+        function openDropModal(testId) {
+            currentTestId = testId;
+            document.getElementById('dropModal').style.display = 'block';
+        }
+        
+        function closeDropModal() {
+            document.getElementById('dropModal').style.display = 'none';
+            document.getElementById('dropReason').value = '';
+            currentTestId = null;
+        }
+        
+        function confirmDrop() {
+            const reason = document.getElementById('dropReason').value;
+            if (!reason) {
+                alert('Please enter a reason');
+                return;
+            }
+            
+            fetch('{% url 'ai_audit:drop_test' %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify({
+                    test_id: currentTestId,
+                    reason: reason
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    closeDropModal();
+                    location.reload();
+                } else {
+                    alert('Drop failed: ' + data.error);
+                }
+            });
+        }
+        
+        window.onclick = function(event) {
+            const modal = document.getElementById('dropModal');
+            if (event.target == modal) {
+                closeDropModal();
+            }
+        }
+    </script>
+</body>
+</html>
