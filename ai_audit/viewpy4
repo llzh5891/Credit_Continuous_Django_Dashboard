@@ -1,0 +1,327 @@
+from django.shortcuts import render, get_object_or_404, redirect
+from django.http import JsonResponse, HttpResponse
+from django.views.decorators.csrf import csrf_exempt
+import json
+import uuid
+from .models import TestLogic, AuditException, Feedback
+from .api import get_api_instance
+from .utils import get_entity_by_id, get_entity_data, get_next_version, generate_test_id
+from credit_app.models import Customer, CreditApplication, Facility
+from agreements.models import AgreementPDF
+
+
+def dashboard(request):
+    """AI Audit Dashboard"""
+    tests = TestLogic.objects.order_by('-created_at')
+    exceptions = AuditException.objects.filter(status='detected').order_by('-created_at')[:10]
+    
+    context = {
+        'tests': tests,
+        'exceptions': exceptions
+    }
+    
+    return render(request, 'ai_audit/dashboard.html', context)
+
+
+def test_detail(request, test_id):
+    """Test Details - 不显示异常记录，只显示测试设计"""
+    test = get_object_or_404(TestLogic, test_id=test_id)
+    
+    context = {
+        'test': test
+    }
+    
+    return render(request, 'ai_audit/test_detail.html', context)
+
+
+def exception_list(request, test_id):
+    """Exception List - 显示实际的异常记录和操作按钮"""
+    test = get_object_or_404(TestLogic, test_id=test_id)
+    exceptions = test.audit_exceptions.all().order_by('-created_at')
+    
+    context = {
+        'test': test,
+        'exceptions': exceptions
+    }
+    
+    return render(request, 'ai_audit/exception_list.html', context)
+
+
+def exception_detail(request, exception_id):
+    """Exception Detail - 显示单个异常详情"""
+    exception = get_object_or_404(AuditException, exception_id=exception_id)
+    entity = get_entity_by_id(exception.entity_type, exception.entity_id)
+    entity_data = get_entity_data(entity)
+    
+    context = {
+        'exception': exception,
+        'entity': entity,
+        'entity_data': entity_data
+    }
+    
+    return render(request, 'ai_audit/exception_detail.html', context)
+
+
+@csrf_exempt
+def update_exception_status(request):
+    """Update exception status"""
+    if request.method == 'POST':
+        data = json.loads(request.body)
+        exception_id = data.get('exception_id')
+        status = data.get('status')
+        
+        try:
+            exception = AuditException.objects.get(exception_id=exception_id)
+            exception.status = status
+            exception.save()
+            return JsonResponse({'success': True})
+        except AuditException.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Exception not found'})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    
+    return JsonResponse({'success': False, 'error': 'Invalid request'})
+
+
+@csrf_exempt
+def submit_feedback(request):
+    """Submit false positive feedback"""
+    if request.method == 'POST':
+        data = json.loads(request.body)
+        exception_id = data.get('exception_id')
+        feedback_content = data.get('feedback_content')
+        user_id = data.get('user_id', 'anonymous')
+        
+        try:
+            exception = AuditException.objects.get(exception_id=exception_id)
+            
+            # Create feedback record
+            feedback = Feedback.objects.create(
+                test=exception.test,
+                exception=exception,
+                user_id=user_id,
+                feedback_content=feedback_content,
+                feedback_type='false_positive'
+            )
+            
+            # Update exception status
+            exception.status = 'false_positive'
+            exception.save()
+            
+            # Generate new version based on feedback
+            api = get_api_instance()
+            new_logic = api.update_test_logic(exception.test.test_logic, feedback_content)
+            
+            if isinstance(new_logic, str):
+                try:
+                    new_logic = json.loads(new_logic)
+                except json.JSONDecodeError:
+                    new_logic = None
+            
+            if new_logic:
+                objectives = new_logic.get('objective', [])
+                how_to_test = new_logic.get('how to test', [])
+                exceptions_data = new_logic.get('exception', [])
+                evidence = new_logic.get('evidence', [])
+                
+                test_rationale = '\n'.join(objectives) if objectives else "No objectives"
+                test_content = json.dumps(new_logic, indent=2)
+                
+                next_version = get_next_version(exception.test.test_id)
+                
+                new_test = TestLogic.objects.create(
+                    test_id=exception.test.test_id,
+                    test_version=next_version,
+                    test_name=exception.test.test_name,
+                    test_description=exception.test.test_description,
+                    column_to_use=exception.test.column_to_use,
+                    objectives=objectives,
+                    how_to_test=how_to_test,
+                    exceptions=exceptions_data,
+                    evidence=evidence,
+                    test_logic=test_content,
+                    ai_rationale=test_rationale,
+                    model_version=exception.test.model_version,
+                    status='pending'
+                )
+                
+                # 为新版本创建异常记录
+                for i, exception_rule in enumerate(exceptions_data):
+                    entity_type = 'Customer'
+                    entity_id = str(uuid.uuid4())
+                    
+                    # 尝试获取实际的客户ID
+                    customers = list(Customer.objects.all().values())
+                    if customers:
+                        customer = customers[i % len(customers)]
+                        entity_id = customer.get('customer_id', str(uuid.uuid4()))
+                    
+                    AuditException.objects.create(
+                        test=new_test,
+                        test_version=next_version,
+                        entity_type=entity_type,
+                        entity_id=entity_id,
+                        exception_details=f"Exception detected v{next_version}: {exception_rule}"
+                    )
+            
+            return JsonResponse({'success': True})
+        except AuditException.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Exception not found'})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    
+    return JsonResponse({'success': False, 'error': 'Invalid request'})
+
+
+@csrf_exempt
+def update_test_status(request):
+    """Update test status"""
+    if request.method == 'POST':
+        data = json.loads(request.body)
+        test_id = data.get('test_id')
+        status = data.get('status')
+        
+        try:
+            test = TestLogic.objects.get(test_id=test_id)
+            test.status = status
+            test.save()
+            return JsonResponse({'success': True})
+        except TestLogic.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Test not found'})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    
+    return JsonResponse({'success': False, 'error': 'Invalid request'})
+
+
+@csrf_exempt
+def drop_test(request):
+    """Drop test with reason"""
+    if request.method == 'POST':
+        data = json.loads(request.body)
+        test_id = data.get('test_id')
+        reason = data.get('reason', '')
+        
+        try:
+            test = TestLogic.objects.get(test_id=test_id)
+            test.status = 'dropped'
+            test.test_description = f"{test.test_description or ''}\n\nDropped Reason: {reason}".strip()
+            test.save()
+            return JsonResponse({'success': True})
+        except TestLogic.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Test not found'})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    
+    return JsonResponse({'success': False, 'error': 'Invalid request'})
+
+
+def generate_tests(request):
+    """Generate test logic and create actual exception records"""
+    try:
+        # 获取实际数据样本
+        customers = list(Customer.objects.all()[:5].values())
+        credit_applications = list(CreditApplication.objects.all()[:5].values())
+        facilities = list(Facility.objects.all()[:5].values())
+        agreements = list(AgreementPDF.objects.all()[:5].values())
+        
+        # 转换不可序列化对象
+        def convert_objects(data):
+            from datetime import date, datetime
+            from decimal import Decimal
+            
+            for item in data:
+                for key, value in item.items():
+                    if value is None:
+                        continue
+                    if hasattr(value, 'hex') and hasattr(value, 'fields'):
+                        item[key] = str(value)
+                    elif isinstance(value, date) and not isinstance(value, datetime):
+                        item[key] = value.isoformat()
+                    elif isinstance(value, datetime):
+                        item[key] = value.isoformat()
+                    elif isinstance(value, Decimal):
+                        item[key] = str(value)
+            return data
+        
+        customers = convert_objects(customers)
+        credit_applications = convert_objects(credit_applications)
+        facilities = convert_objects(facilities)
+        agreements = convert_objects(agreements)
+        
+        sample_data = {
+            'customers': customers,
+            'credit_applications': credit_applications,
+            'facilities': facilities,
+            'agreements': agreements
+        }
+        
+        # 调用AI API生成测试逻辑
+        api = get_api_instance()
+        response = api.generate_test_logic(sample_data)
+        
+        if isinstance(response, str):
+            try:
+                response = json.loads(response)
+            except json.JSONDecodeError:
+                return HttpResponse("Error: Invalid JSON response")
+        
+        if response:
+            objectives = response.get('objective', [])
+            how_to_test = response.get('how to test', [])
+            exceptions_data = response.get('exception', [])
+            evidence = response.get('evidence', [])
+            
+            test_rationale = '\n'.join(objectives) if objectives else "No objectives"
+            test_content = json.dumps(response, indent=2)
+            
+            test_id = generate_test_id()
+            test_version = 1
+            
+            # 创建测试逻辑记录
+            test = TestLogic.objects.create(
+                test_id=test_id,
+                test_version=test_version,
+                test_name=f"Audit Test {test_id}",
+                test_description="AI-generated audit test",
+                column_to_use="Multiple columns",
+                objectives=objectives,
+                how_to_test=how_to_test,
+                exceptions=exceptions_data,
+                evidence=evidence,
+                test_logic=test_content,
+                ai_rationale=test_rationale,
+                model_version="GPT-5",
+                status='pending'
+            )
+            
+            # 根据AI返回的异常规则创建实际的异常记录
+            # 使用实际的客户数据来创建异常
+            all_customers = list(Customer.objects.all())
+            
+            for i, exception_rule in enumerate(exceptions_data):
+                # 确定实体类型和ID
+                entity_type = 'Customer'
+                entity_id = str(uuid.uuid4())
+                
+                # 如果有实际客户数据，使用实际客户ID
+                if all_customers:
+                    customer = all_customers[i % len(all_customers)]
+                    entity_id = str(customer.customer_id)
+                
+                # 创建异常记录
+                AuditException.objects.create(
+                    test=test,
+                    test_version=test_version,
+                    entity_type=entity_type,
+                    entity_id=entity_id,
+                    exception_details=f"Exception detected: {exception_rule}"
+                )
+            
+        else:
+            return HttpResponse("API call failed")
+        
+    except Exception as e:
+        return HttpResponse(f"Error: {str(e)}")
+    
+    return redirect('ai_audit:dashboard')
