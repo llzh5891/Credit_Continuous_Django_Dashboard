@@ -11,3 +11,19 @@ urlpatterns = [
     path('api/submit_feedback/', views.submit_feedback, name='submit_feedback'),
     path('generate_tests/', views.generate_tests, name='generate_tests'),
 ]
+
+from django.urls import path
+from . import views
+
+app_name = 'ai_audit'
+
+urlpatterns = [
+    path('', views.dashboard, name='dashboard'),
+    path('test/<uuid:test_id>/', views.test_detail, name='test_detail'),
+    path('exception/<uuid:exception_id>/', views.exception_detail, name='exception_detail'),
+    path('api/update_exception_status/', views.update_exception_status, name='update_exception_status'),
+    path('api/submit_feedback/', views.submit_feedback, name='submit_feedback'),
+    path('api/update_test_status/', views.update_test_status, name='update_test_status'),
+    path('api/drop_test/', views.drop_test, name='drop_test'),
+    path('generate_tests/', views.generate_tests, name='generate_tests'),
+]
